@@ -165,14 +165,14 @@ def _finish(trace, bundle_hash, leaf, decision, reason, t0) -> dict:
 
 
 def _response(status: int, body: dict) -> dict:
+    # CORS headers are NOT set here. The Function URL's own CORS config
+    # (set at deploy time via `create-function-url-config --cors`) already
+    # injects them, and AWS evaluates that before this code ever runs — a
+    # second, duplicate Access-Control-Allow-Origin from here causes browsers
+    # to reject the response outright, even when both values are identical.
     return {
         "statusCode": status,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": os.environ.get("CORS_ORIGIN", "*"),
-            "Access-Control-Allow-Headers": "content-type",
-            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-        },
+        "headers": {"Content-Type": "application/json"},
         "body": json.dumps(body),
     }
 
@@ -180,6 +180,9 @@ def _response(status: int, body: dict) -> dict:
 def lambda_handler(event, context):  # noqa: ANN001 - AWS Lambda entrypoint signature
     method = event.get("requestContext", {}).get("http", {}).get("method", "POST")
     path = event.get("rawPath", "/")
+    # OPTIONS preflight is handled entirely by the Function URL's own CORS
+    # config before invocation reaches here in normal operation; this branch
+    # is a harmless fallback, not the active path.
     if method == "OPTIONS":
         return _response(204, {})
     if path.endswith("/pubkey") and method == "GET":
