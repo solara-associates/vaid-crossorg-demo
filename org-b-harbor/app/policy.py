@@ -22,17 +22,21 @@ ALLOWED_TRUST_DOMAINS = {
 # regardless of what a longer, authentic chain would attenuate correctly to.
 MAX_DELEGATION_DEPTH = int(os.environ.get("MAX_DELEGATION_DEPTH", "1"))
 
-# Resource scope Org B grants to the one (trust_domain, agent_class) pair this
-# demo recognises. A request for anything not listed as a prefix match here is
-# refused with reason "outside_scope" even if the presented credential's own
-# scope boundary would cover it — this is Org B's policy, checked in addition
-# to (not instead of) the credential's own attenuation chain.
+# Resource scope Org B grants per trust domain, for this demo's one partner.
+# A request for anything not listed as a prefix match here is refused with
+# reason "outside_scope" even if the presented credential's own scope
+# boundary would cover it — this is Org B's policy, checked in addition to
+# (not instead of) the credential's own attenuation chain.
+#
+# Keyed by trust domain only, not agent_class: a sub-agent Northwind delegates
+# to (scenario 3) legitimately carries a different agent_class than its
+# root, and the delegation chain itself — verified separately, in full — is
+# what vouches for that sub-agent, not a string match on its class name.
 _GRANTED_TRUST_DOMAIN = os.environ.get("GRANTED_TRUST_DOMAIN", "")
-_GRANTED_AGENT_CLASS = os.environ.get("GRANTED_AGENT_CLASS", "infra-agent")
 _GRANTED_PREFIXES = [p.strip() for p in os.environ.get("GRANTED_RESOURCE_PREFIXES", "").split(",") if p.strip()]
 
-GRANTED_RESOURCE_PREFIXES: dict[tuple[str, str], list[str]] = {
-    (_GRANTED_TRUST_DOMAIN, _GRANTED_AGENT_CLASS): _GRANTED_PREFIXES
+GRANTED_RESOURCE_PREFIXES: dict[str, list[str]] = {
+    _GRANTED_TRUST_DOMAIN: _GRANTED_PREFIXES
 } if _GRANTED_TRUST_DOMAIN else {}
 
 
@@ -41,5 +45,5 @@ def is_trust_domain_allowed(trust_domain: str) -> bool:
 
 
 def resource_in_scope(trust_domain: str, agent_class: str, resource: str) -> bool:
-    prefixes = GRANTED_RESOURCE_PREFIXES.get((trust_domain, agent_class), [])
+    prefixes = GRANTED_RESOURCE_PREFIXES.get(trust_domain, [])
     return any(resource.startswith(p) for p in prefixes)
