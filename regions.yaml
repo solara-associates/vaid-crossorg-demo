@@ -1,0 +1,21 @@
+# Single source of truth for region in this repo (Architectural Rules A2).
+#
+# This is a two-cloud demo where the region itself is part of what is being
+# demonstrated (no US region on either side), so region literals legitimately
+# appear in deploy scripts and READMEs as infrastructure-as-code / documentation,
+# not as application logic making a region decision at runtime.
+permitted_regions:
+  - europe-west1
+  - eu-west-2
+
+gcp:
+  region: europe-west1
+aws:
+  region: eu-west-2
+
+allowlist:
+  - org-a-northwind/deploy.sh
+  - org-b-harbor/deploy.sh
+  - demo-wake.sh
+  - README.md
+  - REPORT-s351.md
