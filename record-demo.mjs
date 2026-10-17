@@ -23,7 +23,6 @@ await page.goto(ORG_A_URL, { waitUntil: 'networkidle' });
 await page.waitForTimeout(800);
 
 // Set the cache window slider to a short value up front.
-await page.fill('#cacheWindow', ''); // no-op guard, range input needs dispatch below
 await page.evaluate((v) => {
   const el = document.getElementById('cacheWindow');
   el.value = v;
@@ -40,12 +39,15 @@ await runScenario('allowed', 2500);
 await runScenario('outside_scope', 2500);
 await runScenario('delegation', 4000);
 await runScenario('revocation', (CACHE_WINDOW_SECONDS + 4) * 1000);
-await runScenario('tamper', 2000);
+await runScenario('tamper', 1500);
 
-// Click through the tamper-and-verify flow explicitly.
+// Click through the tamper-and-verify flow explicitly: verify clean first,
+// then tamper, then verify again to show the one detected failure.
+await page.click('button.action:not(.secondary)'); // verify bundle (clean)
+await page.waitForTimeout(2000);
 await page.click('button.action.secondary'); // flip one byte
 await page.waitForTimeout(500);
-await page.click('button.action:not(.secondary)'); // verify bundle
+await page.click('button.action:not(.secondary)'); // verify bundle (tampered)
 await page.waitForTimeout(2500);
 
 await context.close();
