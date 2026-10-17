@@ -101,6 +101,24 @@ if ! aws lambda get-function-url-config --function-name "$FUNCTION_NAME" --regio
   aws lambda add-permission --region "$REGION" --function-name "$FUNCTION_NAME" \
     --statement-id FunctionURLAllowPublicAccess --action lambda:InvokeFunctionUrl \
     --principal "*" --function-url-auth-type NONE >/dev/null
+  # As of late 2025, a public (AuthType NONE) Function URL also needs a SEPARATE
+  # lambda:InvokeFunction grant conditioned on InvokedViaFunctionUrl — the
+  # InvokeFunctionUrl grant above is not sufficient on its own, and the plain
+  # `aws lambda add-permission --function-url-auth-type NONE` CLI flag only
+  # supports the InvokeFunctionUrl action, not this condition, so it is added
+  # via boto3 directly. Without this, anonymous requests get a 403
+  # AccessDeniedException even though the resource policy looks complete.
+  python3 -c "
+import boto3
+c = boto3.client('lambda', region_name='$REGION')
+c.add_permission(
+    FunctionName='$FUNCTION_NAME',
+    StatementId='public-invoke-via-url',
+    Action='lambda:InvokeFunction',
+    Principal='*',
+    InvokedViaFunctionUrl=True,
+)
+"
 fi
 
 URL="$(aws lambda get-function-url-config --function-name "$FUNCTION_NAME" --region "$REGION" --query FunctionUrl --output text)"

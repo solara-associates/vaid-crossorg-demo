@@ -1,0 +1,5 @@
+node_modules/
+*.webm
+package-lock.json
+__pycache__/
+*.pyc

@@ -11,6 +11,7 @@ import json
 import os
 import time
 import uuid
+from decimal import Decimal
 
 import boto3
 
@@ -50,6 +51,21 @@ def write_record(*, bundle_hash: str, agent_vaid_id: str | None, agent_class: st
     return record
 
 
+def _undecimal(value):
+    """DynamoDB returns every number as Decimal. Every number this table ever
+    stores is really an int (timestamps, depths, counts), so this is a safe,
+    lossless narrowing — and a necessary one: a Decimal neither serializes to
+    JSON by default nor reproduces the exact bytes the original int signed."""
+    if isinstance(value, Decimal):
+        return int(value)
+    if isinstance(value, dict):
+        return {k: _undecimal(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_undecimal(v) for v in value]
+    return value
+
+
 def list_records(limit: int = 50) -> list[dict]:
     resp = _table().scan(Limit=limit)
-    return sorted(resp.get("Items", []), key=lambda r: r["ts"])
+    items = sorted(resp.get("Items", []), key=lambda r: r["ts"])
+    return [_undecimal(item) for item in items]

@@ -52,6 +52,16 @@ def handle(event: dict) -> dict:
     ancestors = body.get("ancestors", [])
     request = body.get("request", {})
     resource = request.get("resource", "")
+    # Demo-only knob: the crossing view lets a viewer set the cache window
+    # visibly, including shorter than the deployed default, so the revocation
+    # scenario is demonstrable without a multi-minute wait. Bounded so the
+    # demo page cannot push it below 1s or above the deployed default.
+    cache_window = CACHE_WINDOW_SECONDS
+    if "cache_window_seconds" in request:
+        try:
+            cache_window = max(1, min(int(request["cache_window_seconds"]), CACHE_WINDOW_SECONDS))
+        except (TypeError, ValueError):
+            pass
 
     if not isinstance(leaf, dict) or "vaid_id" not in leaf:
         return _response(400, {"decision": "refuse", "reason": "bad_request", "trace": trace})
@@ -70,7 +80,7 @@ def handle(event: dict) -> dict:
 
     # 2. public-key fetch (cache hit/miss, key id)
     try:
-        pubkey_der, key_id, cache_hit = keystore.get_org_a_public_key(trust_domain, CACHE_WINDOW_SECONDS)
+        pubkey_der, key_id, cache_hit = keystore.get_org_a_public_key(trust_domain, cache_window)
     except Exception as exc:  # noqa: BLE001 - surfaced to caller as a decision, not a 500
         _step(trace, "public_key_fetch", False, {"error": str(exc)})
         return _finish(trace, bundle_hash, leaf, "refuse", "key_fetch_failed", t0)
@@ -95,12 +105,12 @@ def handle(event: dict) -> dict:
     #    implementation; VAID defines the three-state seam, not the transport.
     lineage_ids = [a.get("vaid_id") for a in ancestors] + [leaf["vaid_id"]]
     try:
-        status, cache_hit_rev = revocation_client.check(trust_domain, lineage_ids, CACHE_WINDOW_SECONDS)
+        status, cache_hit_rev = revocation_client.check(trust_domain, lineage_ids, cache_window)
     except Exception as exc:  # noqa: BLE001
         _step(trace, "revocation", False, {"error": str(exc)})
         return _finish(trace, bundle_hash, leaf, "refuse", "revocation_unavailable", t0)
     rev_ok = status == "clean"
-    _step(trace, "revocation", rev_ok, {"status": status, "cache_hit": cache_hit_rev, "window_s": CACHE_WINDOW_SECONDS})
+    _step(trace, "revocation", rev_ok, {"status": status, "cache_hit": cache_hit_rev, "window_s": cache_window})
     if status == "indeterminate":
         return _finish(trace, bundle_hash, leaf, "refuse", "revocation_unavailable", t0)
     if status == "revoked":
