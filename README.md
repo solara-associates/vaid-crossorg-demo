@@ -109,9 +109,9 @@ attenuation, lineage — runs through `vaid-mint` 0.11 unmodified.
   front of them in this demo, so the browser page can call them directly and
   the crossing view shows real network traffic. In production these would be
   behind Org A's own operator auth.
-- Org B's Lambda Function URL required an explicit account-level public-access
-  allowance on Allan's AWS sandbox before anonymous requests worked (resource
-  policy alone was not sufficient) — see `REPORT-s351.md` for the exact error
-  and what unblocked it.
+- Org B's Lambda Function URL needed a second resource-policy statement
+  (`lambda:InvokeFunction` with condition `InvokedViaFunctionUrl=true`) before
+  anonymous requests worked — the `lambda:InvokeFunctionUrl` grant alone was
+  not sufficient. `org-b-harbor/deploy.sh` includes it.
 - The revocation feed is this demo's own plumbing, not part of the VAID wire
   spec. Said outright in the talk track, not hidden.

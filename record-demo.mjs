@@ -8,7 +8,7 @@ import fs from 'node:fs';
 const ORG_A_URL = process.env.ORG_A_URL;
 if (!ORG_A_URL) { console.error('set ORG_A_URL'); process.exit(1); }
 
-const OUT_DIR = process.env.OUT_DIR || '/Users/allansmeyatsky/solara/lz2026';
+const OUT_DIR = process.env.OUT_DIR || '.';
 const CACHE_WINDOW_SECONDS = 8; // short, so scenario 4's wait stays small
 
 const browser = await chromium.launch();
