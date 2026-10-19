@@ -15,9 +15,11 @@ import os
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from google.cloud import firestore
 from pydantic import BaseModel
@@ -234,7 +236,35 @@ def verify_bundle(req: VerifyBundleRequest):
     }
 
 
+# Build marker so a presenter can tell which build is loaded, rather than
+# trusting that a normal (non-hard) reload fetched the current one (s367 —
+# Allan's browser served a stale cached index.html on demo day).
+BUILD_SHA = os.environ.get("BUILD_SHA", "unknown")
+_INDEX_HTML = (
+    (Path(__file__).parent / "static" / "index.html")
+    .read_text()
+    .replace("__BUILD_SHA__", BUILD_SHA)
+)
+
+_NO_STORE_HEADERS = {"Cache-Control": "no-store"}
+
+
+@app.get("/", response_class=HTMLResponse)
+@public
+def index():
+    return HTMLResponse(content=_INDEX_HTML, headers=_NO_STORE_HEADERS)
+
+
+class NoStoreStaticFiles(StaticFiles):
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+
 # Static demo page, served from the same origin as the mint/delegate/revoke
 # API so the crossing view's same-origin calls are visibly same-origin, and
-# the call to Org B is visibly the only cross-origin one.
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+# the call to Org B is visibly the only cross-origin one. index.html itself
+# is served by the explicit route above (for the build-marker substitution);
+# this mount covers any other static assets, also with Cache-Control: no-store.
+app.mount("/", NoStoreStaticFiles(directory="static", html=True), name="static")
