@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VAID cross-org demo — Northwind to Harbor Ops</title>
+<title>Northwind to Harbor Ops: badge demo</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -14,27 +14,31 @@
   --text:#f0ecdf; --text-dim:#a7a28c; --ok:#5fae6c; --bad:#c9524a; --warn:#d9a53a;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--black);color:var(--text);font-family:'IBM Plex Sans',sans-serif;padding:0 20px;}
+body{margin:0;background:var(--black);color:var(--text);font-family:'IBM Plex Sans',sans-serif;padding:0 20px;font-size:16px;}
 h1,h2,h3{font-family:'Space Grotesk',sans-serif;margin:0.2em 0;}
 header{padding:24px 0 16px;border-bottom:1px solid var(--line);}
-header h1{font-size:1.4rem;color:var(--gold);letter-spacing:0.02em;}
-header p{color:var(--text-dim);margin:4px 0 0;font-size:0.92rem;}
-.orgs{display:flex;gap:18px;margin-top:10px;font-size:0.85rem;color:var(--text-dim);}
+header h1{font-size:1.5rem;color:var(--gold);letter-spacing:0.02em;}
+header p{color:var(--text-dim);margin:4px 0 0;font-size:0.95rem;}
+.orgs{display:flex;gap:18px;margin-top:10px;font-size:0.9rem;color:var(--text-dim);flex-wrap:wrap;}
 .orgs span b{color:var(--text);}
-.layout{display:grid;grid-template-columns:260px 1fr;gap:20px;margin-top:20px;align-items:start;}
+.intro{margin-top:16px;}
+.intro p{margin:0;line-height:1.55;font-size:1.02rem;}
+.intro b{color:var(--gold);}
+.layout{display:grid;grid-template-columns:280px 1fr;gap:20px;margin-top:20px;align-items:start;}
 @media (max-width: 860px){.layout{grid-template-columns:1fr;}}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;}
 .scenario-btn{display:block;width:100%;text-align:left;background:var(--panel2);color:var(--text);
   border:1px solid var(--line);border-radius:5px;padding:12px 14px;margin-bottom:10px;cursor:pointer;
-  font-family:'IBM Plex Sans',sans-serif;font-size:0.92rem;transition:border-color .15s;}
+  font-family:'IBM Plex Sans',sans-serif;font-size:0.95rem;transition:border-color .15s;}
 .scenario-btn:hover{border-color:var(--gold-dim);}
 .scenario-btn.active{border-color:var(--gold);color:var(--gold);}
-.scenario-btn small{display:block;color:var(--text-dim);font-size:0.78rem;margin-top:3px;}
+.scenario-btn small{display:block;color:var(--text-dim);font-size:0.8rem;margin-top:3px;font-weight:400;}
+.scenario-btn:disabled{opacity:0.55;cursor:default;}
 .settings{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);}
 .settings label{display:block;font-size:0.8rem;color:var(--text-dim);margin-bottom:6px;}
 .settings input[type=range]{width:100%;}
 .settings .val{color:var(--gold);font-weight:600;}
-.crossing{min-height:420px;}
+.crossing{min-height:460px;}
 .step-row{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);}
 .step-row:last-child{border-bottom:none;}
 .badge{flex:0 0 22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;
@@ -54,10 +58,11 @@ header p{color:var(--text-dim);margin:4px 0 0;font-size:0.92rem;}
 .cross-arrow{display:flex;align-items:center;gap:10px;margin:14px 0;color:var(--gold);font-size:0.85rem;}
 .cross-arrow .line{flex:1;height:1px;background:linear-gradient(to right, var(--gold-dim), var(--gold), var(--gold-dim));}
 .evidence{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;}
-button.action{background:var(--gold);color:#201c08;border:none;border-radius:4px;padding:9px 16px;
-  font-family:'IBM Plex Sans',sans-serif;font-weight:600;cursor:pointer;}
+button.action{background:var(--gold);color:#201c08;border:none;border-radius:4px;padding:10px 16px;
+  font-family:'IBM Plex Sans',sans-serif;font-weight:600;cursor:pointer;font-size:0.95rem;}
 button.action:disabled{opacity:0.5;cursor:default;}
 button.action.secondary{background:transparent;border:1px solid var(--gold-dim);color:var(--gold);}
+button.action.danger{background:transparent;border:1px solid var(--bad);color:var(--bad);}
 textarea.bundle{width:100%;min-height:160px;background:#0d0c09;color:var(--text);border:1px solid var(--line);
   border-radius:5px;font-family:monospace;font-size:0.78rem;padding:10px;}
 .footnote{color:var(--text-dim);font-size:0.78rem;margin-top:6px;}
@@ -65,48 +70,130 @@ textarea.bundle{width:100%;min-height:160px;background:#0d0c09;color:var(--text)
 .pill.gcp{color:#8ab4f8;border-color:#2c4a73;}
 .pill.aws{color:#f7a93b;border-color:#6b4c15;}
 footer{margin:40px 0 24px;color:var(--text-dim);font-size:0.78rem;border-top:1px solid var(--line);padding-top:14px;}
+
+/* simple view */
+.simple-block{margin-bottom:24px;}
+.simple-block .simple-sub{font-size:0.95rem;color:var(--gold-dim);margin:0 0 8px;font-family:'Space Grotesk',sans-serif;
+  text-transform:uppercase;letter-spacing:0.04em;}
+.simple-headline{font-family:'Space Grotesk',sans-serif;font-size:1.3rem;font-weight:700;line-height:1.35;
+  padding:16px 18px;border-radius:6px;margin-bottom:16px;}
+.simple-headline.accept{background:rgba(95,174,108,0.14);border:1px solid var(--ok);color:var(--ok);}
+.simple-headline.refuse{background:rgba(201,82,74,0.14);border:1px solid var(--bad);color:var(--bad);}
+.simple-row{display:flex;gap:16px;align-items:flex-start;padding:16px 0;border-bottom:1px solid var(--line);}
+.simple-row:last-child{border-bottom:none;}
+.simple-row .tick{flex:0 0 36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:1.2rem;font-weight:700;margin-top:2px;}
+.simple-row .tick.ok{background:var(--ok);color:#06220c;}
+.simple-row .tick.bad{background:var(--bad);color:#2a0705;}
+.simple-row .tick.warn{background:var(--warn);color:#2a1c02;}
+.simple-row .q{font-family:'Space Grotesk',sans-serif;font-size:1.1rem;display:block;margin-bottom:5px;}
+.simple-row .a{font-size:1.05rem;color:var(--text);line-height:1.4;margin:0;}
+
+details.tech{margin-top:10px;}
+details.tech summary{cursor:pointer;color:var(--gold-dim);font-size:0.9rem;padding:8px 0;user-select:none;}
+details.tech summary:hover{color:var(--gold);}
+details.tech[open] summary{color:var(--gold);}
+.tech-inner{margin-top:12px;border-top:1px dashed var(--line);padding-top:14px;}
+
+.scope-panel{background:var(--panel2);border:1px solid var(--gold-dim);border-radius:5px;padding:14px;margin-bottom:14px;}
+.scope-panel h4{margin:0 0 10px;font-family:'Space Grotesk',sans-serif;color:var(--gold);font-size:0.85rem;
+  text-transform:uppercase;letter-spacing:0.04em;}
+.scope-row{display:grid;grid-template-columns:190px 1fr;gap:4px 10px;font-size:0.88rem;margin-bottom:6px;align-items:baseline;}
+.scope-row dt{color:var(--text-dim);}
+.scope-resource{font-family:monospace;font-size:0.88rem;}
+.scope-resource .match{background:rgba(201,162,39,0.25);color:var(--gold);border-radius:3px;padding:0 2px;}
+.scope-resource .extra{color:var(--text);}
+.scope-result{display:inline-block;margin-top:2px;padding:3px 10px;border-radius:4px;font-weight:600;font-size:0.82rem;}
+.scope-result.inside{background:rgba(95,174,108,0.18);color:var(--ok);}
+.scope-result.outside{background:rgba(201,82,74,0.18);color:var(--bad);}
+.scope-result.unknown{background:var(--line);color:var(--text-dim);}
+
+.driver{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);}
+.driver h3{font-size:1rem;}
+.driver label{display:block;font-size:0.8rem;color:var(--text-dim);margin-bottom:6px;margin-top:10px;}
+.driver select, .driver input[type=text]{width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);
+  border-radius:4px;padding:8px;font-family:'IBM Plex Sans',sans-serif;font-size:0.9rem;}
+.driver .custom-check{display:flex;align-items:center;gap:6px;margin-top:10px;font-size:0.78rem;color:var(--text-dim);}
+.driver .custom-check input{margin:0;}
+.driver .row{display:flex;gap:8px;margin-top:12px;}
+.driver .row button{flex:1;}
+.driver .status{font-size:0.82rem;color:var(--text-dim);margin-top:10px;line-height:1.4;}
+.driver .status.revoked{color:var(--bad);}
 </style>
 </head>
 <body>
 <header>
-  <h1>VAID across clouds — Northwind Platform &rarr; Harbor Ops</h1>
-  <p>Two organisations, no shared IAM, no federation, no network peering, no secrets in common. The only thing crossing the boundary is a signed credential and a request.</p>
+  <h1>Northwind sends an agent to do a job for Harbor Ops</h1>
+  <p>Two separate companies. No shared login systems, no private network between them, no secrets in common. The only thing that crosses the boundary is a signed badge and a request.</p>
   <div class="orgs">
-    <span>Org A: <b>Northwind Platform</b> <span class="pill gcp">GCP, europe-west1</span></span>
-    <span>Org B: <b>Harbor Ops</b> <span class="pill aws">AWS, eu-west-2</span></span>
+    <span>Northwind Platform <span class="pill gcp">Google Cloud, Europe</span></span>
+    <span>Harbor Ops <span class="pill aws">AWS, Europe</span></span>
   </div>
 </header>
 
+<div class="panel intro">
+  <p><b>Think of it like a work ID badge.</b> Northwind issues the badge: it says who the holder is, which doors it may open, and who issued it. Harbor Ops, a completely different company on different computers, can check any badge at its own front desk, on the spot, without ever phoning Northwind. Cancelling a badge works the same way: Northwind cancels it centrally, and the next time Harbor checks, that badge no longer opens any door. (The technical name for this kind of badge is <b>VAID</b>; we will not use that word again on this page.)</p>
+</div>
+
 <div class="layout">
   <div class="panel">
-    <h3>Scenarios</h3>
-    <button class="scenario-btn" data-scenario="allowed">1. Allowed<small>In-scope request, accepted and attributed</small></button>
-    <button class="scenario-btn" data-scenario="outside_scope">2. Out of scope<small>Refused: outside_scope</small></button>
-    <button class="scenario-btn" data-scenario="delegation">3. Delegation<small>Depth 1 accepted, depth 2 refused</small></button>
-    <button class="scenario-btn" data-scenario="revocation">4. Revocation<small>Cache window makes it not-instant</small></button>
-    <button class="scenario-btn" data-scenario="tamper">5. Tamper and verify<small>Export, check, break on purpose</small></button>
+    <h3>Try a story</h3>
+    <button class="scenario-btn" data-scenario="allowed">1. Allowed job<small>The agent asks for something its badge covers</small></button>
+    <button class="scenario-btn" data-scenario="outside_scope">2. Job outside its badge<small>Same agent, same badge, asks for something it doesn't cover</small></button>
+    <button class="scenario-btn" data-scenario="delegation">3. Agent hands work to a helper<small>One hand-off is fine; a second is refused</small></button>
+    <button class="scenario-btn" data-scenario="revocation">4. Badge cancelled<small>Northwind cancels it; Harbor catches on when it next checks</small></button>
+    <button class="scenario-btn" data-scenario="tamper">5. Someone tampers with the record<small>Flip one character in a signed record and watch it get caught</small></button>
+
+    <div class="driver">
+      <h3>Drive it yourself</h3>
+      <label>What should the agent try to do?</label>
+      <select id="jobPicker">
+        <optgroup label="Likely allowed">
+          <option value="harbor-ops/deploy/service-x">Update Harbor's web servers</option>
+          <option value="harbor-ops/deploy/service-y">Update Harbor's checkout service</option>
+        </optgroup>
+        <optgroup label="Likely not allowed">
+          <option value="harbor-ops/secrets/rotate">Rotate Harbor's secrets</option>
+          <option value="harbor-ops/billing/export">Export Harbor's billing data</option>
+        </optgroup>
+      </select>
+      <div class="custom-check">
+        <input type="checkbox" id="customCheck">
+        <label for="customCheck" style="margin:0;">Use a custom technical resource path instead</label>
+      </div>
+      <input type="text" id="customResource" placeholder="harbor-ops/..." hidden>
+      <div class="row">
+        <button class="action" id="sendJobBtn">Send the job</button>
+        <button class="action danger" id="cancelBadgeBtn" disabled>Cancel the badge</button>
+      </div>
+      <p class="status" id="driverStatus">No badge issued yet. Click "Send the job" to issue one and try it.</p>
+    </div>
 
     <div class="settings">
-      <label>Key / revocation cache window: <span class="val" id="cacheWindowVal">60s</span></label>
+      <label>How often Harbor rechecks for a cancelled badge: <span class="val" id="cacheWindowVal">60s</span></label>
       <input type="range" id="cacheWindow" min="1" max="60" value="60">
-      <p class="footnote">Lower this before running scenario 4 so the revocation effect is visible in under a minute. 60s is the deployed default on both sides.</p>
+      <p class="footnote">Lower this before scenario 4 so the effect of cancelling a badge is visible in under a minute. 60 seconds is the real, deployed default on both sides.</p>
     </div>
   </div>
 
   <div class="panel crossing" id="crossing">
-    <h2>Crossing view</h2>
-    <p class="footnote" id="crossingHint">Pick a scenario on the left. Every step below is the real request this page is making right now — open your browser's network tab if you want to see it too.</p>
-    <div id="crossingBody"></div>
+    <h2>What happened</h2>
+    <p class="footnote" id="crossingHint">Pick a story on the left, or drive it yourself below. Nothing here is staged: every request is really crossing from Google Cloud to AWS right now.</p>
+    <div id="simpleBody"></div>
+    <details class="tech" id="techDetails">
+      <summary>Show technical detail</summary>
+      <div class="tech-inner" id="crossingBody"></div>
+    </details>
   </div>
 </div>
 
 <footer>
-  Org A public key: <code id="orgAKeyUrl"></code> &middot; Org B public key: <code id="orgBKeyUrl"></code><br>
+  Northwind's public key: <code id="orgAKeyUrl"></code> &middot; Harbor Ops' public key: <code id="orgBKeyUrl"></code><br>
   This page makes no claim the running system does not back. Anything simulated is labelled as such.
 </footer>
 
 <script>
-const state = { orgBUrl: null, root: null, child: null, grandchild: null, cacheWindow: 60 };
+const state = { orgBUrl: null, root: null, child: null, grandchild: null, driver: null, cacheWindow: 60, busy: false };
 
 const el = (tag, attrs={}, ...children) => {
   const n = document.createElement(tag);
@@ -133,6 +220,8 @@ async function loadConfig() {
 
 function body() { return document.getElementById('crossingBody'); }
 function clearBody() { body().innerHTML = ''; }
+function simpleBody() { return document.getElementById('simpleBody'); }
+function clearSimple() { simpleBody().innerHTML = ''; }
 
 function stepRow(label, status, detail) {
   const badge = status === 'pending' ? '…' : status === 'ok' ? '✓' : '✕';
@@ -223,71 +312,222 @@ function crossingArrow(label) {
   body().appendChild(el('div', {class:'cross-arrow'}, el('span',{},label), el('span',{class:'line'})));
 }
 
+// ---- plain-language layer ----
+
+function agentLabel(agentClass) {
+  if (agentClass === 'infra-agent') return "Northwind's deployment agent";
+  if (agentClass === 'infra-agent-sub') return "A helper agent, one hand-off from Northwind's deployment agent";
+  if (agentClass === 'infra-agent-sub-sub') return "A second helper, two hand-offs from Northwind's deployment agent";
+  return `Northwind's agent (${agentClass || 'unknown class'})`;
+}
+
+const PLAIN_RESOURCE = {
+  'harbor-ops/deploy/service-x': "update Harbor's web servers",
+  'harbor-ops/deploy/service-y': "update Harbor's checkout service",
+  'harbor-ops/secrets/rotate': "change Harbor's secrets",
+  'harbor-ops/billing/export': "export Harbor's billing data",
+};
+function plainResource(resource) {
+  return PLAIN_RESOURCE[resource] || `do this: ${resource}`;
+}
+
+function findStep(trace, name) { return (trace || []).find(s => s.step === name); }
+
+function simpleRow(q, status, text) {
+  const icon = status === 'ok' ? '✓' : status === 'warn' ? '!' : '✕';
+  return el('div', {class:'simple-row'},
+    el('div', {class:'tick ' + status}, icon),
+    el('div', {},
+      el('span', {class:'q', html:`<b>${q}</b>`}),
+      el('p', {class:'a'}, text)
+    )
+  );
+}
+
+function simpleBlock(sub, headlineText, headlineOk, rows) {
+  const block = el('div', {class:'simple-block'});
+  if (sub) block.appendChild(el('div', {class:'simple-sub'}, sub));
+  block.appendChild(el('div', {class:'simple-headline ' + (headlineOk ? 'accept' : 'refuse')}, headlineText));
+  rows.forEach(r => block.appendChild(simpleRow(r.q, r.status, r.text)));
+  simpleBody().appendChild(block);
+  return block;
+}
+
+// Standard 3-question framing for a single accept/refuse decision against a live request.
+function renderStandardSimple(sub, leaf, resource, decision) {
+  const trace = decision.trace || [];
+  const sigStep = findStep(trace, 'signature');
+  const trustStep = findStep(trace, 'trust_domain_allowlist');
+  const depthStep = findStep(trace, 'delegation_depth_and_attenuation');
+  const revStep = findStep(trace, 'revocation');
+  const scopeStep = findStep(trace, 'scope_policy');
+
+  const chainOk = !depthStep || (depthStep.detail && depthStep.detail.chain_result === 'attenuated');
+  const identityOk = (!trustStep || trustStep.ok) && (!sigStep || sigStep.ok) && chainOk;
+  const whoRow = identityOk
+    ? { q: 'Who is this?', status: 'ok', text: `${agentLabel(leaf.agent_class)}. Confirmed: this badge was issued by Northwind and its signature checks out.` }
+    : { q: 'Who is this?', status: 'bad', text: `Harbor could not confirm this badge really came from Northwind.` };
+
+  let allowedRow;
+  if (revStep && !revStep.ok) {
+    allowedRow = { q: 'Are they allowed to do this?', status: 'bad', text: `No. Northwind cancelled this badge, and Harbor has now noticed.` };
+  } else if (depthStep && !depthStep.ok && chainOk) {
+    allowedRow = { q: 'Are they allowed to do this?', status: 'bad', text: `No. This badge was handed down twice, and Harbor only accepts one hand-off.` };
+  } else if (scopeStep && !scopeStep.ok) {
+    allowedRow = { q: 'Are they allowed to do this?', status: 'bad', text: `No. It asked to ${plainResource(resource)}, which this badge doesn't cover.` };
+  } else if (decision.decision === 'accept') {
+    allowedRow = { q: 'Are they allowed to do this?', status: 'ok', text: `Yes. It may ${plainResource(resource)}, and that is within this badge.` };
+  } else {
+    allowedRow = { q: 'Are they allowed to do this?', status: 'bad', text: `No. Harbor refused this (reason: ${decision.reason}).` };
+  }
+
+  const proveOk = !!(decision.audit_record && !decision.audit_record.audit_write_failed);
+  const proveRow = proveOk
+    ? { q: 'Can we prove it later?', status: 'ok', text: `Yes. Harbor recorded and signed this decision. Anyone holding Harbor's public key can check it later.` }
+    : { q: 'Can we prove it later?', status: 'bad', text: `No signed record was produced for this decision.` };
+
+  let headline;
+  if (decision.decision === 'accept') headline = `Harbor said yes: a real job, within the agent's badge.`;
+  else if (decision.reason === 'outside_scope') headline = `Harbor refused: the agent was genuine, but asked for something its badge doesn't cover.`;
+  else if (decision.reason === 'delegation_depth_exceeded') headline = `Harbor refused: Northwind's rules only allow one hand-off, and this is the second.`;
+  else if (decision.reason === 'revoked') headline = `Harbor refused: the badge was cancelled.`;
+  else headline = `Harbor refused this request (reason: ${decision.reason}).`;
+
+  simpleBlock(sub, headline, decision.decision === 'accept', [whoRow, allowedRow, proveRow]);
+}
+
+function renderScopePanel(leaf, resource, trace) {
+  const scopeStep = findStep(trace, 'scope_policy');
+  const granted = (leaf.scope_boundary || [])[0];
+  const grantedStr = granted ? `${granted.kind}: ${granted.value}` : 'none';
+  const grantedValue = granted ? granted.value : '';
+
+  let matchLen = 0;
+  while (matchLen < grantedValue.length && matchLen < resource.length && grantedValue[matchLen] === resource[matchLen]) matchLen++;
+  const resourceHtml = `<span class="match">${esc(resource.slice(0, matchLen))}</span><span class="extra">${esc(resource.slice(matchLen))}</span>`;
+
+  let resultClass = 'unknown', resultText = 'Not evaluated: refused earlier in the check';
+  if (scopeStep) {
+    resultClass = scopeStep.ok ? 'inside' : 'outside';
+    resultText = scopeStep.ok ? 'INSIDE granted scope' : 'OUTSIDE granted scope';
+  }
+
+  body().appendChild(el('div', {class:'scope-panel'},
+    el('h4', {}, 'Scope decision'),
+    el('div', {class:'scope-row'}, el('dt',{},'Granted scope (from the credential)'), el('dd',{},grantedStr)),
+    el('div', {class:'scope-row'}, el('dt',{},'Requested resource'), el('dd', {class:'scope-resource', html:resourceHtml})),
+    el('div', {class:'scope-row'}, el('dt',{},'Result'), el('dd',{}, el('span', {class:'scope-result ' + resultClass}, resultText))),
+  ));
+}
+
+function esc(s) { return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+function setBusy(b) {
+  state.busy = b;
+  document.querySelectorAll('.scenario-btn').forEach(btn => btn.disabled = b);
+  document.getElementById('sendJobBtn').disabled = b;
+  document.getElementById('cancelBadgeBtn').disabled = b || !state.driver;
+}
+
+function deselectScenarios() {
+  document.querySelectorAll('.scenario-btn').forEach(b => b.classList.remove('active'));
+}
+
 async function runAllowed() {
-  clearBody();
-  stepRow('Minting root credential on Org A', 'pending');
+  clearSimple(); clearBody();
+  stepRow('Minting root credential on Northwind', 'pending');
   state.root = await mintRoot('harbor-ops/', ['deploy']);
   clearBody();
-  body().appendChild(credentialBox('1. Credential minted in Org A', state.root.leaf, state.root.ancestors));
-  crossingArrow('request leaves GCP — only the credential + request cross');
-  const { decision } = await crossToOrgB(state.root, 'harbor-ops/deploy/service-x', state.cacheWindow);
+  body().appendChild(credentialBox('1. Credential minted on Northwind', state.root.leaf, state.root.ancestors));
+  crossingArrow('request leaves Google Cloud: only the badge and the request cross');
+  const resource = 'harbor-ops/deploy/service-x';
+  const { decision } = await crossToOrgB(state.root, resource, state.cacheWindow);
+  renderStandardSimple(null, state.root.leaf, resource, decision);
+  renderScopePanel(state.root.leaf, resource, decision.trace);
   renderTrace(decision.trace);
   renderDecision(decision);
 }
 
 async function runOutsideScope() {
-  clearBody();
+  clearSimple(); clearBody();
   if (!state.root) state.root = await mintRoot('harbor-ops/', ['deploy']);
-  body().appendChild(credentialBox('Credential (same root agent as scenario 1)', state.root.leaf, state.root.ancestors));
-  crossingArrow('request leaves GCP — this time for a resource outside Harbor Ops’ own granted prefix');
-  const { decision } = await crossToOrgB(state.root, 'harbor-ops/secrets/rotate', state.cacheWindow);
+  body().appendChild(credentialBox('Credential (same badge as "Allowed job")', state.root.leaf, state.root.ancestors));
+  crossingArrow('request leaves Google Cloud: this time asking for something outside the granted scope');
+  const resource = 'harbor-ops/secrets/rotate';
+  const { decision } = await crossToOrgB(state.root, resource, state.cacheWindow);
+  renderStandardSimple(null, state.root.leaf, resource, decision);
+  renderScopePanel(state.root.leaf, resource, decision.trace);
   renderTrace(decision.trace);
   renderDecision(decision);
 }
 
 async function runDelegation() {
-  clearBody();
-  stepRow('Minting root, then a depth-1 delegate, on Org A', 'pending');
+  clearSimple(); clearBody();
+  stepRow('Minting a root badge, then handing a copy to a helper', 'pending');
   state.root = await mintRoot('harbor-ops/', ['deploy']);
   state.child = await mintDelegate(state.root.leaf.vaid_id, 'infra-agent-sub', 'harbor-ops/deploy/', ['deploy']);
   clearBody();
+  const resource = 'harbor-ops/deploy/service-x';
+
   body().appendChild(credentialBox('Depth-1 delegate credential', state.child.leaf, state.child.ancestors));
-  crossingArrow('depth-1 request leaves GCP');
-  const d1 = await crossToOrgB(state.child, 'harbor-ops/deploy/service-x', state.cacheWindow);
+  crossingArrow('depth-1 request leaves Google Cloud');
+  const d1 = await crossToOrgB(state.child, resource, state.cacheWindow);
+  renderStandardSimple('One hand-off', state.child.leaf, resource, d1.decision);
+  renderScopePanel(state.child.leaf, resource, d1.decision.trace);
   renderTrace(d1.decision.trace);
   renderDecision(d1.decision);
 
-  body().appendChild(el('h3', {}, 'Now a second hop (depth 2)'));
+  body().appendChild(el('h3', {}, 'Now a second hand-off (depth 2)'));
   state.grandchild = await mintDelegate(state.child.leaf.vaid_id, 'infra-agent-sub-sub', 'harbor-ops/deploy/', ['deploy']);
   body().appendChild(credentialBox('Depth-2 delegate credential', state.grandchild.leaf, state.grandchild.ancestors));
-  crossingArrow('depth-2 request leaves GCP');
-  const d2 = await crossToOrgB(state.grandchild, 'harbor-ops/deploy/service-x', state.cacheWindow);
+  crossingArrow('depth-2 request leaves Google Cloud');
+  const d2 = await crossToOrgB(state.grandchild, resource, state.cacheWindow);
+  renderStandardSimple('Two hand-offs', state.grandchild.leaf, resource, d2.decision);
+  renderScopePanel(state.grandchild.leaf, resource, d2.decision.trace);
   renderTrace(d2.decision.trace);
   renderDecision(d2.decision);
 }
 
 async function runRevocation() {
-  clearBody();
-  stepRow(`Minting a fresh agent, requesting once to warm Org B’s ${state.cacheWindow}s cache`, 'pending');
+  clearSimple(); clearBody();
+  const resource = 'harbor-ops/deploy/service-x';
+  stepRow(`Minting a fresh badge, asking once to warm Harbor's ${state.cacheWindow}s recheck window`, 'pending');
   state.root = await mintRoot('harbor-ops/', ['deploy']);
-  const first = await crossToOrgB(state.root, 'harbor-ops/deploy/service-x', state.cacheWindow);
+  const first = await crossToOrgB(state.root, resource, state.cacheWindow);
   clearBody();
   body().appendChild(credentialBox('Credential', state.root.leaf, state.root.ancestors));
-  body().appendChild(el('h3', {}, 'First request (before revocation)'));
+
+  body().appendChild(el('h3', {}, 'Before cancelling'));
+  renderStandardSimple('Before cancelling', state.root.leaf, resource, first.decision);
+  renderScopePanel(state.root.leaf, resource, first.decision.trace);
   renderTrace(first.decision.trace);
   renderDecision(first.decision);
 
-  body().appendChild(el('h3', {}, `Revoking on Org A, then retrying immediately (cache window not yet elapsed)`));
+  body().appendChild(el('h3', {}, `Cancelling on Northwind, then retrying immediately (recheck window not yet elapsed)`));
   await revokeVaid(state.root.leaf.vaid_id);
-  const immediate = await crossToOrgB(state.root, 'harbor-ops/deploy/service-x', state.cacheWindow);
+  const immediate = await crossToOrgB(state.root, resource, state.cacheWindow);
+  const stillAccepted = immediate.decision.decision === 'accept';
+  simpleBlock(
+    'Right after cancelling',
+    stillAccepted ? `Still allowed, for now: Harbor has not rechecked since the badge was cancelled.` : `Harbor refused: the badge was cancelled and Harbor already noticed.`,
+    stillAccepted,
+    [
+      { q: 'Who is this?', status: 'ok', text: `${agentLabel(state.root.leaf.agent_class)}. The badge itself is still genuine.` },
+      stillAccepted
+        ? { q: 'Are they allowed to do this?', status: 'warn', text: `Yes, for now. Northwind cancelled this badge, but Harbor last checked moments ago and has not rechecked yet.` }
+        : { q: 'Are they allowed to do this?', status: 'bad', text: `No. Northwind cancelled this badge, and Harbor has now noticed.` },
+      { q: 'Can we prove it later?', status: immediate.decision.audit_record ? 'ok' : 'bad', text: immediate.decision.audit_record ? `Yes. Harbor recorded and signed this decision.` : `No signed record was produced.` },
+    ].filter(Boolean)
+  );
+  renderScopePanel(state.root.leaf, resource, immediate.decision.trace);
   renderTrace(immediate.decision.trace);
   renderDecision(immediate.decision);
   body().appendChild(el('p', {class:'footnote'},
-    immediate.decision.decision === 'accept'
-      ? 'Still accepted — Org B’s revocation cache has not expired yet. This is the deliberate trade-off: freshness vs. a network round trip on every request.'
-      : 'Already refused — the cache window was short enough that this request landed after it expired.'));
+    stillAccepted
+      ? 'Still accepted. Harbor\'s recheck window has not expired yet. This is a deliberate trade-off: freshness versus a network round trip on every single request.'
+      : 'Already refused: the recheck window was short enough that this request landed after it expired.'));
 
-  body().appendChild(el('h3', {}, `Waiting ${state.cacheWindow}s for the cache window to pass`));
+  body().appendChild(el('h3', {}, `Waiting ${state.cacheWindow}s for the recheck window to pass`));
   const waitRow = stepRow('waiting', 'pending', '');
   for (let s = state.cacheWindow; s > 0; s--) {
     waitRow.querySelector('.detail').textContent = `${s}s remaining`;
@@ -295,17 +535,19 @@ async function runRevocation() {
   }
   waitRow.querySelector('.badge').className = 'badge ok';
   waitRow.querySelector('.badge').textContent = '✓';
-  waitRow.querySelector('.detail').textContent = 'cache window elapsed';
+  waitRow.querySelector('.detail').textContent = 'recheck window elapsed';
 
-  const after = await crossToOrgB(state.root, 'harbor-ops/deploy/service-x', state.cacheWindow);
-  body().appendChild(el('h3', {}, 'Retrying after the cache window'));
+  const after = await crossToOrgB(state.root, resource, state.cacheWindow);
+  body().appendChild(el('h3', {}, 'Retrying after the recheck window'));
+  renderStandardSimple('After the recheck window', state.root.leaf, resource, after.decision);
+  renderScopePanel(state.root.leaf, resource, after.decision.trace);
   renderTrace(after.decision.trace);
   renderDecision(after.decision);
 }
 
 async function runTamper() {
-  clearBody();
-  stepRow('Fetching both orgs’ public keys and audit records', 'pending');
+  clearSimple(); clearBody();
+  stepRow('Fetching both companies’ public keys and signed records', 'pending');
   const [orgAKeys, orgBKeys, orgAAudit, orgBAudit] = await Promise.all([
     fetch('/.well-known/vaid-keys.json').then(r => r.json()),
     fetch(state.orgBUrl.replace(/\/$/, '') + '/pubkey').then(r => r.json()),
@@ -320,6 +562,16 @@ async function runTamper() {
     org_a_records: orgAAudit.records,
     org_b_records: orgBAudit.records,
   };
+
+  simpleBlock(null,
+    `This is Harbor's signed logbook. Click "Flip one byte" to fake a change, then "Verify" to see it get caught.`,
+    true,
+    [
+      { q: 'Whose records are these?', status: 'ok', text: `Harbor's own signed decisions, the same ones shown in the earlier stories.` },
+      { q: 'Has anyone changed one?', status: 'ok', text: `Not yet. Try the buttons below to tamper with one on purpose.` },
+      { q: 'Can we prove it either way?', status: 'ok', text: `Yes. Every record carries its own signature, checked against Harbor's published public key.` },
+    ]
+  );
 
   body().appendChild(el('h3', {}, 'Evidence bundle (editable — try flipping one character in a signature below)'));
   const ta = el('textarea', {class:'bundle'});
@@ -351,13 +603,23 @@ async function runTamper() {
     try { parsed = JSON.parse(ta.value); } catch (e) { resultsDiv.textContent = 'invalid JSON: ' + e; return; }
     const res = await fetch('/verify-bundle', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(parsed) });
     const out = await res.json();
+    clearSimple();
     const line = (org, results) => {
       const bad = results.filter(r => !r.signature_valid);
       resultsDiv.appendChild(el('div', {class:'decision-banner ' + (bad.length ? 'refuse' : 'accept')},
         `${org}: ${results.length - bad.length}/${results.length} records verify against the published public key${bad.length ? ' — ' + bad.length + ' FAILED (tampered or corrupted)' : ''}`));
+      simpleBlock(org,
+        bad.length ? `Caught it: ${bad.length} of ${results.length} ${org} record(s) no longer match their signature.` : `Clean: all ${results.length} ${org} record(s) still match their signature.`,
+        bad.length === 0,
+        [
+          { q: 'Whose records are these?', status: 'ok', text: `${org}'s own signed decisions.` },
+          { q: 'Has anyone changed one?', status: bad.length ? 'bad' : 'ok', text: bad.length ? `Yes. ${bad.length} record(s) no longer match the signature ${org} originally produced.` : `No, every record still matches the signature it was created with.` },
+          { q: 'Can we prove it either way?', status: 'ok', text: `Yes. This is exactly what the signature check just did, using only the publicly published key.` },
+        ]
+      );
     };
-    line('Org A (Northwind Platform)', out.org_a);
-    line('Org B (Harbor Ops)', out.org_b);
+    line('Harbor Ops', out.org_b);
+    line('Northwind', out.org_a);
   };
 }
 
@@ -365,13 +627,61 @@ const scenarios = { allowed: runAllowed, outside_scope: runOutsideScope, delegat
 
 document.querySelectorAll('.scenario-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
-    document.querySelectorAll('.scenario-btn').forEach(b => b.classList.remove('active'));
+    if (state.busy) return;
+    deselectScenarios();
     btn.classList.add('active');
-    document.querySelectorAll('.scenario-btn').forEach(b => b.disabled = true);
+    setBusy(true);
     try { await scenarios[btn.dataset.scenario](); }
-    catch (e) { body().appendChild(el('div', {class:'decision-banner refuse'}, 'Error: ' + e)); }
-    document.querySelectorAll('.scenario-btn').forEach(b => b.disabled = false);
+    catch (e) { clearSimple(); body().appendChild(el('div', {class:'decision-banner refuse'}, 'Error: ' + e)); }
+    setBusy(false);
   });
+});
+
+// ---- drive it yourself ----
+
+const customCheck = document.getElementById('customCheck');
+const customResource = document.getElementById('customResource');
+customCheck.addEventListener('change', () => { customResource.hidden = !customCheck.checked; });
+
+document.getElementById('sendJobBtn').addEventListener('click', async () => {
+  if (state.busy) return;
+  const resource = customCheck.checked ? customResource.value.trim() : document.getElementById('jobPicker').value;
+  if (!resource) return;
+  deselectScenarios();
+  setBusy(true);
+  try {
+    const driverStatus = document.getElementById('driverStatus');
+    if (!state.driver) {
+      state.driver = await mintRoot('harbor-ops/', ['deploy']);
+      driverStatus.className = 'status';
+      driverStatus.textContent = `Badge issued: ${state.driver.leaf.vaid_id} (active). Sending the job now.`;
+    }
+    clearSimple(); clearBody();
+    body().appendChild(credentialBox('Your badge', state.driver.leaf, state.driver.ancestors));
+    crossingArrow('request leaves Google Cloud');
+    const { decision } = await crossToOrgB(state.driver, resource, state.cacheWindow);
+    renderStandardSimple(null, state.driver.leaf, resource, decision);
+    renderScopePanel(state.driver.leaf, resource, decision.trace);
+    renderTrace(decision.trace);
+    renderDecision(decision);
+  } catch (e) {
+    clearSimple(); body().appendChild(el('div', {class:'decision-banner refuse'}, 'Error: ' + e));
+  }
+  setBusy(false);
+});
+
+document.getElementById('cancelBadgeBtn').addEventListener('click', async () => {
+  if (state.busy || !state.driver) return;
+  setBusy(true);
+  try {
+    await revokeVaid(state.driver.leaf.vaid_id);
+    const driverStatus = document.getElementById('driverStatus');
+    driverStatus.className = 'status revoked';
+    driverStatus.textContent = `Badge cancelled. Harbor will notice next time it rechecks (within the recheck window above). Click "Send the job" again to see it refused, or lower the recheck window first.`;
+  } catch (e) {
+    clearSimple(); body().appendChild(el('div', {class:'decision-banner refuse'}, 'Error: ' + e));
+  }
+  setBusy(false);
 });
 
 loadConfig();
