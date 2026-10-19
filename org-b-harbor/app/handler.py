@@ -132,10 +132,20 @@ def handle(event: dict) -> dict:
     if not depth_ok:
         return _finish(trace, bundle_hash, leaf, "refuse", "delegation_depth_exceeded", t0)
 
-    # 7. scope against Org B's own policy
+    # 7. scope against Org B's own policy. Surfaced here, not just derived by
+    # the caller from the credential's own scope_boundary: the credential's
+    # grant and Harbor's own policy are two separate things that happen to
+    # agree in this demo, and a viewer should be able to see both rather than
+    # infer Harbor's from the decision alone.
     agent_class = leaf.get("agent_class", "")
+    harbor_granted_prefixes = policy.granted_prefixes(trust_domain)
     in_scope = policy.resource_in_scope(trust_domain, agent_class, resource)
-    _step(trace, "scope_policy", in_scope, {"resource": resource, "agent_class": agent_class})
+    _step(
+        trace,
+        "scope_policy",
+        in_scope,
+        {"resource": resource, "agent_class": agent_class, "harbor_granted_prefixes": harbor_granted_prefixes},
+    )
     if not in_scope:
         return _finish(trace, bundle_hash, leaf, "refuse", "outside_scope", t0)
 

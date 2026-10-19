@@ -26,18 +26,20 @@ from vaid_mint.issuer import ReferenceIssuer, RevocationBackend
 
 import keyring_gcp
 from actor_tags import public
+from agent_registry import FirestoreAgentRegistry
 from durable_store import FirestoreLineageStore, FirestoreRevocationCheck
 
 TRUST_DOMAIN = os.environ["TRUST_DOMAIN"]  # the service's own Cloud Run hostname
 TENANT_ID = os.environ.get("TENANT_ID", "northwind-platform")
 VAID_TTL_HOURS = int(os.environ.get("VAID_TTL_HOURS", "1"))
 
-app = FastAPI(title="Northwind Platform — VAID issuer")
+app = FastAPI(title="Northwind Platform: VAID issuer")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 _fs_client = firestore.Client()
 _lineage = FirestoreLineageStore(_fs_client)
 _revocation = FirestoreRevocationCheck(_fs_client)
+_agents = FirestoreAgentRegistry(_fs_client)
 _audit_col = _fs_client.collection("vaid_audit")
 
 _kernel_key = keyring_gcp.load_kernel_key()
@@ -58,7 +60,7 @@ def _sign_audit(record: dict) -> dict:
 
 class MintRequest(BaseModel):
     agent_class: str = "infra-agent"
-    scope_prefix: str = "harbor-ops/"
+    scope_prefix: str = "harbor-ops/deploy/"
     capability_set: list[str] = ["deploy"]
 
 
@@ -115,7 +117,8 @@ def mint(req: MintRequest):
         "vaid_id": doc["vaid_id"],
         "parent_vaid": None,
     })
-    bundle = {"leaf": doc, "ancestors": []}
+    agent_id = _agents.get_or_create(req.agent_class)
+    bundle = {"leaf": doc, "ancestors": [], "agent": {"agent_class": req.agent_class, "agent_id": agent_id}}
     _fs_client.collection("vaid_documents").document(doc["vaid_id"]).set(bundle)
     return bundle
 
@@ -125,7 +128,7 @@ def mint(req: MintRequest):
 def delegate(req: DelegateRequest):
     parent_doc = _fs_client.collection("vaid_documents").document(req.parent_vaid).get()
     if not parent_doc.exists:
-        raise HTTPException(404, "unknown parent_vaid — mint it on this service first")
+        raise HTTPException(404, "unknown parent_vaid. mint it on this service first")
     parent = parent_doc.to_dict()
 
     child = _issuer.issue_vaid_with_lineage(
@@ -146,7 +149,8 @@ def delegate(req: DelegateRequest):
         "parent_vaid": req.parent_vaid,
     })
     ancestors = parent["ancestors"] + [parent["leaf"]]
-    bundle = {"leaf": child, "ancestors": ancestors}
+    agent_id = _agents.get_or_create(req.agent_class)
+    bundle = {"leaf": child, "ancestors": ancestors, "agent": {"agent_class": req.agent_class, "agent_id": agent_id}}
     _fs_client.collection("vaid_documents").document(child["vaid_id"]).set(bundle)
     return bundle
 
