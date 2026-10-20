@@ -393,7 +393,7 @@ function renderStandardSimple(sub, leaf, resource, decision) {
   if (revStep && !revStep.ok) {
     allowedRow = { q: 'Are they allowed to do this?', status: 'bad', text: `No. Northwind cancelled this badge, and Harbor has now noticed.` };
   } else if (depthStep && !depthStep.ok && chainOk) {
-    allowedRow = { q: 'Are they allowed to do this?', status: 'bad', text: `No. This badge was handed down twice, and Harbor only accepts one hand-off.` };
+    allowedRow = { q: 'Are they allowed to do this?', status: 'bad', text: `No. This badge was handed down twice, and Harbor's own policy only accepts one hand-off.` };
   } else if (scopeStep && !scopeStep.ok) {
     allowedRow = { q: 'Are they allowed to do this?', status: 'bad', text: `No. It asked to ${plainResource(resource)}, which this badge doesn't cover.` };
   } else if (decision.decision === 'accept') {
@@ -410,7 +410,7 @@ function renderStandardSimple(sub, leaf, resource, decision) {
   let headline;
   if (decision.decision === 'accept') headline = `Harbor said yes: a real job, within the agent's badge.`;
   else if (decision.reason === 'outside_scope') headline = `Harbor refused: the agent was genuine, but asked for something its badge doesn't cover.`;
-  else if (decision.reason === 'delegation_depth_exceeded') headline = `Harbor refused: Northwind's rules only allow one hand-off, and this is the second.`;
+  else if (decision.reason === 'delegation_depth_exceeded') headline = `Harbor refused: Harbor's own rules only allow one hand-off, and this is the second.`;
   else if (decision.reason === 'revoked') headline = `Harbor refused: the badge was cancelled.`;
   else headline = `Harbor refused this request (reason: ${decision.reason}).`;
 
@@ -504,6 +504,7 @@ async function runDelegation() {
   clearBody();
   const resource = 'harbor-ops/deploy/service-x';
 
+  body().appendChild(credentialBox('Depth-0 root credential', state.root));
   body().appendChild(credentialBox('Depth-1 delegate credential', state.child));
   crossingArrow('depth-1 request leaves Google Cloud');
   const d1 = await crossToOrgB(state.child, resource, state.cacheWindow);
