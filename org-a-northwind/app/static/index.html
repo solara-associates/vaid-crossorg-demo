@@ -243,16 +243,23 @@ function credentialBox(title, bundle) {
   const depth = (ancestors || []).length;
   const scope = (leaf.scope_boundary || []).map(s => `${s.kind}:${s.value}`).join(', ');
   const agentLine = agent ? `${agent.agent_class} · ${agent.agent_id}` : leaf.agent_class;
+  const dlChildren = [
+    el('dt',{},'trust domain'), el('dd',{},leaf.trust_domain),
+    el('dt',{},'Agent (stable identity)'), el('dd',{},agentLine),
+    el('dt',{},'Credential (this badge)'), el('dd',{},leaf.vaid_id),
+  ];
+  if (depth > 0) {
+    const parent = ancestors[ancestors.length - 1];
+    dlChildren.push(el('dt',{},'Handed off from'), el('dd',{},`${parent.agent_class} · ${parent.vaid_id}`));
+  }
+  dlChildren.push(
+    el('dt',{},'scope boundary'), el('dd',{},scope),
+    el('dt',{},'lineage depth'), el('dd',{},String(depth)),
+    el('dt',{},'expiry'), el('dd',{},leaf.expires_at),
+  );
   const box = el('div', {class:'credential-box'},
     el('div', {html:`<b>${title}</b>`}),
-    el('dl', {},
-      el('dt',{},'trust domain'), el('dd',{},leaf.trust_domain),
-      el('dt',{},'Agent (stable identity)'), el('dd',{},agentLine),
-      el('dt',{},'Credential (this badge)'), el('dd',{},leaf.vaid_id),
-      el('dt',{},'scope boundary'), el('dd',{},scope),
-      el('dt',{},'lineage depth'), el('dd',{},String(depth)),
-      el('dt',{},'expiry'), el('dd',{},leaf.expires_at),
-    )
+    el('dl', {}, ...dlChildren)
   );
   return box;
 }
@@ -338,6 +345,15 @@ function plainResource(resource) {
 
 function findStep(trace, name) { return (trace || []).find(s => s.step === name); }
 
+const STEP_LABELS = {
+  trust_domain_allowlist: 'trust domain check',
+  public_key_fetch: 'key fetch',
+  signature: 'signature check',
+  expiry: 'expiry check',
+  revocation: 'revocation check',
+  delegation_depth_and_attenuation: 'delegation depth',
+};
+
 function simpleRow(q, status, text) {
   const icon = status === 'ok' ? '✓' : status === 'warn' ? '!' : '✕';
   return el('div', {class:'simple-row'},
@@ -407,8 +423,15 @@ function renderScopePanel(leaf, resource, trace) {
   const grantedStr = granted ? granted.value : 'none';
   const grantedValue = granted ? granted.value : '';
 
-  const harborPrefixes = scopeStep ? (scopeStep.detail.harbor_granted_prefixes || []) : [];
-  const harborStr = harborPrefixes.length ? harborPrefixes.join(', ') : 'nothing for this trust domain';
+  let harborStr;
+  if (scopeStep) {
+    const harborPrefixes = scopeStep.detail.harbor_granted_prefixes || [];
+    harborStr = harborPrefixes.length ? harborPrefixes.join(', ') : 'nothing for this trust domain';
+  } else {
+    const lastStep = (trace && trace.length) ? trace[trace.length - 1] : null;
+    const stepLabel = lastStep ? STEP_LABELS[lastStep.step] || lastStep.step.replace(/_/g,' ') : 'an earlier check';
+    harborStr = `Not checked: refused earlier at ${stepLabel}`;
+  }
 
   let matchLen = 0;
   while (matchLen < grantedValue.length && matchLen < resource.length && grantedValue[matchLen] === resource[matchLen]) matchLen++;
