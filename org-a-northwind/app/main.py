@@ -41,6 +41,23 @@ VAID_TTL_HOURS = int(os.environ.get("VAID_TTL_HOURS", "1"))
 VAID_LINEAGE_COLLECTION = os.environ.get("VAID_LINEAGE_COLLECTION", "vaid_lineage")
 VAID_REVOKED_COLLECTION = os.environ.get("VAID_REVOKED_COLLECTION", "vaid_revoked")
 
+# Scenario 7's caller-held badge key (`/mint`'s `agent_public_key_b64`), off
+# unless a deployment opts in. A caller-held key is strictly MORE capability
+# than the default path gives out: the default `issue_vaid_with_lineage`
+# generates the keypair here and destroys the private half, so no badge it
+# issues can ever be used to prove possession. Accepting a caller's public key
+# hands back a badge whose private half a third party holds and keeps.
+#
+# That is exactly what Gate 2's proof-of-possession check needs, and exactly
+# what the live demo must not offer: live mints badges for a browser page with
+# no operator authentication in front of it (see actor_tags.py), so an opt-in
+# flag, default off, is the difference between "a staging service that can run
+# scenario 7" and "a public endpoint that mints usable held credentials to
+# anyone". The staging deploy script sets it; no live deploy does.
+ALLOW_CALLER_HELD_KEY = os.environ.get("ALLOW_CALLER_HELD_KEY", "").strip().lower() in {
+    "1", "true", "yes", "on",
+}
+
 app = FastAPI(title="Northwind Platform — VAID issuer")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -75,7 +92,8 @@ class MintRequest(BaseModel):
     # possession (scenario 7's Gate 2 PoP check) needs the presenter to hold
     # the badge's private key, so the presenter must generate the keypair
     # itself and hand this service only the public half. Omitted, behaviour
-    # is identical to before this field existed.
+    # is identical to before this field existed. Sending it at all is refused
+    # unless the deployment sets ALLOW_CALLER_HELD_KEY — see that constant.
     agent_public_key_b64: str | None = None
 
 
@@ -116,7 +134,21 @@ def revocation_status():
 @app.post("/mint")
 @public
 def mint(req: MintRequest):
-    if req.agent_public_key_b64:
+    # Keyed on PRESENCE, not truthiness: a caller that sends
+    # `"agent_public_key_b64": ""` against a deployment with the flag off is
+    # asking for the caller-held-key path and must be told it is disabled,
+    # not silently given a badge whose private half this service destroyed.
+    if req.agent_public_key_b64 is not None:
+        if not ALLOW_CALLER_HELD_KEY:
+            raise HTTPException(
+                400,
+                "agent_public_key_b64 is not accepted by this deployment. "
+                "Caller-held badge keys are disabled (ALLOW_CALLER_HELD_KEY is "
+                "not set). Re-send the request without that field to get a "
+                "badge whose private key this service generates and discards.",
+            )
+        if not req.agent_public_key_b64.strip():
+            raise HTTPException(400, "agent_public_key_b64 was sent but is empty")
         try:
             public_key_der = base64.b64decode(req.agent_public_key_b64, validate=True)
         except (ValueError, base64.binascii.Error) as exc:
