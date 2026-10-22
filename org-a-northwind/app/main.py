@@ -32,12 +32,21 @@ TRUST_DOMAIN = os.environ["TRUST_DOMAIN"]  # the service's own Cloud Run hostnam
 TENANT_ID = os.environ.get("TENANT_ID", "northwind-platform")
 VAID_TTL_HOURS = int(os.environ.get("VAID_TTL_HOURS", "1"))
 
+# Firestore's (default) database is per PROJECT, not per deployment. A staging
+# copy of this service in the same project as live would otherwise read and
+# write the SAME lineage and revocation collections as live — see
+# s396-deploy-scenario7-staging.sh for the incident that motivates this.
+# Defaulted to the names this service has always used, so a deployment that
+# does not set these (including the live one, today) is unchanged.
+VAID_LINEAGE_COLLECTION = os.environ.get("VAID_LINEAGE_COLLECTION", "vaid_lineage")
+VAID_REVOKED_COLLECTION = os.environ.get("VAID_REVOKED_COLLECTION", "vaid_revoked")
+
 app = FastAPI(title="Northwind Platform — VAID issuer")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 _fs_client = firestore.Client()
-_lineage = FirestoreLineageStore(_fs_client)
-_revocation = FirestoreRevocationCheck(_fs_client)
+_lineage = FirestoreLineageStore(_fs_client, collection=VAID_LINEAGE_COLLECTION)
+_revocation = FirestoreRevocationCheck(_fs_client, collection=VAID_REVOKED_COLLECTION)
 _audit_col = _fs_client.collection("vaid_audit")
 
 _kernel_key = keyring_gcp.load_kernel_key()
@@ -60,6 +69,14 @@ class MintRequest(BaseModel):
     agent_class: str = "infra-agent"
     scope_prefix: str = "harbor-ops/"
     capability_set: list[str] = ["deploy"]
+    # Scenario 7 only. `issue_vaid_with_lineage` (the default path below)
+    # generates its own keypair and DISCARDS the private half — by design,
+    # for a demo where nothing afterwards ever proves possession. Proof of
+    # possession (scenario 7's Gate 2 PoP check) needs the presenter to hold
+    # the badge's private key, so the presenter must generate the keypair
+    # itself and hand this service only the public half. Omitted, behaviour
+    # is identical to before this field existed.
+    agent_public_key_b64: str | None = None
 
 
 class DelegateRequest(BaseModel):
@@ -99,14 +116,29 @@ def revocation_status():
 @app.post("/mint")
 @public
 def mint(req: MintRequest):
-    doc = _issuer.issue_vaid_with_lineage(
-        agent_class=req.agent_class,
-        version="1",
-        tenant_id=TENANT_ID,
-        parent_vaid=None,
-        scope_boundary=[{"kind": "prefix", "value": req.scope_prefix}],
-        capability_set=req.capability_set,
-    )
+    if req.agent_public_key_b64:
+        try:
+            public_key_der = base64.b64decode(req.agent_public_key_b64, validate=True)
+        except (ValueError, base64.binascii.Error) as exc:
+            raise HTTPException(400, "agent_public_key_b64 is not valid base64") from exc
+        doc = _issuer.issue_vaid_with_key(
+            agent_class=req.agent_class,
+            version="1",
+            tenant_id=TENANT_ID,
+            parent_vaid=None,
+            scope_boundary=[{"kind": "prefix", "value": req.scope_prefix}],
+            capability_set=req.capability_set,
+            public_key_der=public_key_der,
+        )
+    else:
+        doc = _issuer.issue_vaid_with_lineage(
+            agent_class=req.agent_class,
+            version="1",
+            tenant_id=TENANT_ID,
+            parent_vaid=None,
+            scope_boundary=[{"kind": "prefix", "value": req.scope_prefix}],
+            capability_set=req.capability_set,
+        )
     _sign_audit({
         "record_id": str(uuid.uuid4()),
         "ts": int(time.time() * 1000),
