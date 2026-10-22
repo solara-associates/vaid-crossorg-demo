@@ -1,0 +1,12 @@
+# Added with scenario 7 (Gate 1 + Gate 2 at Harbor). deploy.sh does not pip
+# install from this file for the Lambda package itself (it copies pure-Python
+# packages straight out of local site-packages, same as before); this file is
+# for `pip install -r` in a dev/test environment and for anyone reading what
+# this service now depends on.
+boto3
+cryptography>=43,<51
+vaid-mint==0.11.0
+vaid-pop>=0.2,<1
+synthera-policy
+synthera-gate1
+synthera-gate2

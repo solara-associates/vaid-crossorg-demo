@@ -28,8 +28,12 @@ from vaid_mint.chain import PresentedBundle, verify_chain, ChainVerification
 from vaid_mint.verify import verify_vaid_authenticity, parse_vaid_document
 from vaid_mint.document import is_expired
 
+from synthera_gate2 import BadgeVerification, ToolCall, decide
+
 import policy
 import audit
+import gate_audit
+import gates
 import keystore
 import revocation_client
 
@@ -43,6 +47,7 @@ def _step(trace: list, name: str, ok: bool, detail: dict) -> None:
 def handle(event: dict) -> dict:
     t0 = time.time()
     trace: list[dict] = []
+    headers = {str(k): v for k, v in (event.get("headers") or {}).items()}
     try:
         body = json.loads(event.get("body") or "{}")
     except json.JSONDecodeError:
@@ -52,6 +57,12 @@ def handle(event: dict) -> dict:
     ancestors = body.get("ancestors", [])
     request = body.get("request", {})
     resource = request.get("resource", "")
+    request_text = request.get("text", "")
+    tool_call = ToolCall(
+        tool=request.get("tool", "deploy"),
+        action=request.get("action", "deploy"),
+        resource=resource,
+    )
     # Demo-only knob: the crossing view lets a viewer set the cache window
     # visibly, including shorter than the deployed default, so the revocation
     # scenario is demonstrable without a multi-minute wait. Bounded so the
@@ -132,17 +143,122 @@ def handle(event: dict) -> dict:
     if not depth_ok:
         return _finish(trace, bundle_hash, leaf, "refuse", "delegation_depth_exceeded", t0)
 
-    # 7. scope against Org B's own policy
+    # 7/8. Gate 1 + Gate 2, for scenario 7 ONLY — triggered by `request.text`,
+    # a field scenarios 1-6 never send. Absent `text`, behaviour is byte-for-
+    # byte what it was before this change (the `else` branch below): this is
+    # a deliberate, additive boundary, not an oversight. Gate 2 checks a
+    # signed policy against a presented capability reference the scenario
+    # 1-6 badges do not carry, so making this unconditional would turn every
+    # existing scenario's "accept" into "no policy reference" on reaching
+    # this code path — a regression with no test in this repo to catch it.
     agent_class = leaf.get("agent_class", "")
-    in_scope = policy.resource_in_scope(trust_domain, agent_class, resource)
-    _step(trace, "scope_policy", in_scope, {"resource": resource, "agent_class": agent_class})
-    if not in_scope:
-        return _finish(trace, bundle_hash, leaf, "refuse", "outside_scope", t0)
+    if "text" not in request:
+        # Keyed on PRESENCE of the field, not its truthiness: a caller that
+        # explicitly sends an empty `text` is asking for a classification and
+        # must get Gate 1's own fail-closed "escalate" on empty input, not a
+        # silent fall-through to the legacy scope check below.
+        in_scope = policy.resource_in_scope(trust_domain, agent_class, resource)
+        _step(trace, "scope_policy", in_scope, {"resource": resource, "agent_class": agent_class})
+        if not in_scope:
+            return _finish(trace, bundle_hash, leaf, "refuse", "outside_scope", t0)
+        return _finish(trace, bundle_hash, leaf, "accept", "granted", t0)
 
-    return _finish(trace, bundle_hash, leaf, "accept", "granted", t0)
+    g1 = gates.GATE1.classify(request_text)
+    _step(
+        trace,
+        "gate1_classification",
+        g1.may_proceed,
+        {"action": g1.action, "confidence": g1.confidence, "engine_id": g1.engine_id},
+    )
+    if not g1.may_proceed:
+        # Matches the design contract exactly (see
+        # test_an_unavailable_classifier_stops_the_request_without_reaching_gate_2):
+        # an escalation is a block pending a human, and Gate 2 is never
+        # called. Still audited, alone: a decision that stopped the request
+        # is a decision, and the chain should say so.
+        rows = gate_audit.append([
+            gate_audit.PendingRecord(
+                org="harbor-ops",
+                agent_vaid_id=leaf.get("vaid_id"),
+                verified_agent_class=agent_class,
+                tool=tool_call.tool,
+                action=tool_call.action,
+                resource=tool_call.resource,
+                decision=g1.outcome,
+                reason=g1.reason,
+                policy=None,
+                gate="gate1",
+                credential_hash=bundle_hash,
+                extra=g1.audit_fields(),
+            )
+        ])
+        return _finish(
+            trace, bundle_hash, leaf, "refuse", "gate1_" + g1.outcome, t0, gate_rows=rows
+        )
+
+    # 8. Gate 2 — does the signed policy this badge names permit this tool call?
+    pop_body = json.dumps(
+        {"tool": tool_call.tool, "resource": tool_call.resource}, separators=(",", ":")
+    ).encode()
+    g2 = decide(
+        tool_call=tool_call,
+        leaf=leaf,
+        badge=BadgeVerification(verified=True),
+        headers=headers,
+        method=gates.POP_METHOD,
+        path=gates.POP_PATH,
+        body=pop_body,
+        mirror=gates.MIRROR,
+        policy_keys=gates.POLICY_KEYS,
+        nonce_store=gates.NONCE_STORE,
+    )
+    _step(
+        trace,
+        "gate2_policy_decision",
+        g2.tool_may_run,
+        {"outcome": g2.outcome, "refused_at": g2.refused_at, "policy": g2.policy},
+    )
+
+    rows = gate_audit.append([
+        gate_audit.PendingRecord(
+            org="harbor-ops",
+            agent_vaid_id=leaf.get("vaid_id"),
+            verified_agent_class=agent_class,
+            tool=tool_call.tool,
+            action=tool_call.action,
+            resource=tool_call.resource,
+            decision=g1.outcome,
+            reason=g1.reason,
+            policy=None,
+            gate="gate1",
+            credential_hash=bundle_hash,
+            extra=g1.audit_fields(),
+        ),
+        gate_audit.PendingRecord(
+            org="harbor-ops",
+            agent_vaid_id=leaf.get("vaid_id"),
+            verified_agent_class=agent_class,
+            tool=tool_call.tool,
+            action=tool_call.action,
+            resource=tool_call.resource,
+            decision=g2.outcome,
+            reason=g2.reason,
+            policy=g2.policy,
+            gate="gate2",
+            credential_hash=bundle_hash,
+        ),
+    ])
+
+    if not g2.tool_may_run:
+        return _finish(
+            trace, bundle_hash, leaf, "refuse", "gate2_" + (g2.refused_at or g2.outcome), t0,
+            gate_rows=rows,
+        )
+
+    return _finish(trace, bundle_hash, leaf, "accept", "granted", t0, gate_rows=rows)
 
 
-def _finish(trace, bundle_hash, leaf, decision, reason, t0) -> dict:
+def _finish(trace, bundle_hash, leaf, decision, reason, t0, *, gate_rows=None) -> dict:
     record = audit.write_record(
         bundle_hash=bundle_hash,
         agent_vaid_id=leaf.get("vaid_id"),
@@ -160,6 +276,11 @@ def _finish(trace, bundle_hash, leaf, decision, reason, t0) -> dict:
         "latency_ms": int((time.time() - t0) * 1000),
         "audit_record": record,
     }
+    if gate_rows:
+        # The Gate 1 + Gate 2 chained, signed rows this decision produced —
+        # distinct from `audit_record` above, which is Harbor's own
+        # unchained record for scenarios 1-6. See gate_audit.py.
+        body["gate_audit_records"] = [r.body for r in gate_rows]
     status = 200 if decision == "accept" else 403
     return _response(status, body)
 
@@ -189,4 +310,10 @@ def lambda_handler(event, context):  # noqa: ANN001 - AWS Lambda entrypoint sign
         return _response(200, keystore.org_b_public_key_document())
     if path.endswith("/audit") and method == "GET":
         return _response(200, {"records": audit.list_records()})
+    if path.endswith("/gate-audit") and method == "GET":
+        # The Gate 1 + Gate 2 chained, signed records (scenario 7), separate
+        # from /audit above. A caller (the smoke test, the verify page)
+        # reconstructs `AuditRecord(body)` per record and calls
+        # `synthera_gate2.verify_chain` against Org B's own published key.
+        return _response(200, {"records": gate_audit.list_chain()})
     return handle(event)
