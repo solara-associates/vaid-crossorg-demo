@@ -70,14 +70,15 @@ ALLOW_CALLER_HELD_KEY = os.environ.get("ALLOW_CALLER_HELD_KEY", "").strip().lowe
 # Scenario 7 only. The capability reference embedded in a scenario-7 badge
 # names the exact signed policy bundle Harbor's Gate 2 will check it against
 # (tenant, policy name, semver, and the compiled bytecode's own digest) — it
-# is not a secret, the deploy script prints it and bakes the same four values
-# into Harbor. Unset on every deployment that does not run scenario 7
-# (including live), so /scenario7/run refuses rather than minting a
-# capability reference that names a policy Harbor was never given.
-GATE2_POLICY_TENANT_ID = os.environ.get("GATE2_POLICY_TENANT_ID", "")
-GATE2_POLICY_NAME = os.environ.get("GATE2_POLICY_NAME", "")
-GATE2_POLICY_SEMVER = os.environ.get("GATE2_POLICY_SEMVER", "")
-GATE2_POLICY_BYTECODE_SHA256 = os.environ.get("GATE2_POLICY_BYTECODE_SHA256", "")
+# is not a secret. Names match what s409-deploy-scenario7-staging.sh's
+# COMMON_ENV has set on Northwind since before this endpoint existed (it was
+# unread dead config until now). Unset on every deployment that does not run
+# scenario 7 (including live), so /scenario7/run refuses rather than minting
+# a capability reference that names a policy Harbor was never given.
+POLICY_TENANT = os.environ.get("POLICY_TENANT", "")
+POLICY_NAME = os.environ.get("POLICY_NAME", "")
+POLICY_SEMVER = os.environ.get("POLICY_SEMVER", "")
+POLICY_BYTECODE_SHA256 = os.environ.get("POLICY_BYTECODE_SHA256", "")
 ORG_B_URL = os.environ.get("ORG_B_URL", "")
 
 app = FastAPI(title="Northwind Platform — VAID issuer")
@@ -276,10 +277,10 @@ class Scenario7Request(BaseModel):
 def _scenario7_configured() -> bool:
     return bool(
         ALLOW_CALLER_HELD_KEY
-        and GATE2_POLICY_TENANT_ID
-        and GATE2_POLICY_NAME
-        and GATE2_POLICY_SEMVER
-        and GATE2_POLICY_BYTECODE_SHA256
+        and POLICY_TENANT
+        and POLICY_NAME
+        and POLICY_SEMVER
+        and POLICY_BYTECODE_SHA256
         and ORG_B_URL
     )
 
@@ -335,7 +336,7 @@ def scenario7_run(req: Scenario7Request):
         raise HTTPException(
             400,
             "scenario 7 is not configured on this deployment (needs "
-            "ALLOW_CALLER_HELD_KEY, GATE2_POLICY_TENANT_ID/NAME/SEMVER/"
+            "ALLOW_CALLER_HELD_KEY, POLICY_TENANT/NAME/SEMVER/"
             "BYTECODE_SHA256, and ORG_B_URL). Live deploys do not set these.",
         )
     if not req.crossings:
@@ -346,10 +347,10 @@ def scenario7_run(req: Scenario7Request):
         encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
     )
     capability = build_capability(
-        tenant_id=GATE2_POLICY_TENANT_ID,
-        name=GATE2_POLICY_NAME,
-        semver=GATE2_POLICY_SEMVER,
-        bytecode_sha256=GATE2_POLICY_BYTECODE_SHA256,
+        tenant_id=POLICY_TENANT,
+        name=POLICY_NAME,
+        semver=POLICY_SEMVER,
+        bytecode_sha256=POLICY_BYTECODE_SHA256,
     )
     doc = _issuer.issue_vaid_with_key(
         agent_class="infra-deployer",
