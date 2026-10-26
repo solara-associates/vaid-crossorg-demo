@@ -13,6 +13,8 @@ import base64
 import json
 import os
 import time
+import urllib.error
+import urllib.request
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -24,7 +26,11 @@ from fastapi.staticfiles import StaticFiles
 from google.cloud import firestore
 from pydantic import BaseModel
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from vaid_mint.issuer import ReferenceIssuer, RevocationBackend
+from vaid_pop import RequestSigner
+from synthera_gate2 import build_capability
 
 import keyring_gcp
 from actor_tags import public
@@ -60,6 +66,19 @@ VAID_REVOKED_COLLECTION = os.environ.get("VAID_REVOKED_COLLECTION", "vaid_revoke
 ALLOW_CALLER_HELD_KEY = os.environ.get("ALLOW_CALLER_HELD_KEY", "").strip().lower() in {
     "1", "true", "yes", "on",
 }
+
+# Scenario 7 only. The capability reference embedded in a scenario-7 badge
+# names the exact signed policy bundle Harbor's Gate 2 will check it against
+# (tenant, policy name, semver, and the compiled bytecode's own digest) — it
+# is not a secret, the deploy script prints it and bakes the same four values
+# into Harbor. Unset on every deployment that does not run scenario 7
+# (including live), so /scenario7/run refuses rather than minting a
+# capability reference that names a policy Harbor was never given.
+GATE2_POLICY_TENANT_ID = os.environ.get("GATE2_POLICY_TENANT_ID", "")
+GATE2_POLICY_NAME = os.environ.get("GATE2_POLICY_NAME", "")
+GATE2_POLICY_SEMVER = os.environ.get("GATE2_POLICY_SEMVER", "")
+GATE2_POLICY_BYTECODE_SHA256 = os.environ.get("GATE2_POLICY_BYTECODE_SHA256", "")
+ORG_B_URL = os.environ.get("ORG_B_URL", "")
 
 app = FastAPI(title="Northwind Platform — VAID issuer")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -243,6 +262,140 @@ def audit(limit: int = 50):
     return {"records": [d.to_dict() for d in docs]}
 
 
+class Scenario7Crossing(BaseModel):
+    text: str
+    resource: str
+    tool: str = "deploy"
+    action: str = "deploy"
+
+
+class Scenario7Request(BaseModel):
+    crossings: list[Scenario7Crossing]
+
+
+def _scenario7_configured() -> bool:
+    return bool(
+        ALLOW_CALLER_HELD_KEY
+        and GATE2_POLICY_TENANT_ID
+        and GATE2_POLICY_NAME
+        and GATE2_POLICY_SEMVER
+        and GATE2_POLICY_BYTECODE_SHA256
+        and ORG_B_URL
+    )
+
+
+def _cross_to_harbor(leaf: dict, ancestors: list, request: dict, pop_headers: dict) -> dict:
+    """POST one crossing to Harbor, over plain HTTPS, the same way the
+    browser does for scenarios 1-6 — the only difference here is who holds
+    the pen: this process generated the keypair and signs with it below,
+    rather than the browser, because the proof-of-possession signer
+    (`vaid_pop.RequestSigner`) is a byte-identity-locked package already
+    conformance-tested against Rust; re-deriving its RFC 8785 canonicalisation
+    independently in JavaScript for one demo screen is exactly the kind of
+    second definition that package's own docstring warns drifts from the
+    first. The agent's private key lives only in this request's memory and is
+    discarded when it returns — never written to Firestore, a log, or sent
+    back to the browser."""
+    payload = json.dumps({"leaf": leaf, "ancestors": ancestors, "request": request}).encode()
+    req = urllib.request.Request(
+        ORG_B_URL,
+        data=payload,
+        headers={"Content-Type": "application/json", **pop_headers},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        return json.loads(exc.read())
+    except (urllib.error.URLError, TimeoutError) as exc:
+        # Harbor itself (the Lambda, or the network to it) did not answer —
+        # distinct from "gate1_escalate", which is Gate 1's OWN decision
+        # server not answering INSIDE a Harbor that did respond. Both are
+        # fail-closed from this agent's point of view: neither produces a
+        # tool call.
+        return {
+            "decision": "refuse",
+            "reason": "harbor_unreachable",
+            "trace": [],
+            "latency_ms": None,
+            "error": str(exc),
+        }
+
+
+@app.post("/scenario7/run")
+@public
+def scenario7_run(req: Scenario7Request):
+    """Mint one caller-held badge and run one or more crossings against it,
+    each through Gate 1 (classification, grants nothing) and Gate 2 (the
+    signed-policy decision) at Harbor. One endpoint, not the usual
+    mint-then-cross pair, because the private key proving possession of the
+    badge must never leave this process — see `_cross_to_harbor`."""
+    if not _scenario7_configured():
+        raise HTTPException(
+            400,
+            "scenario 7 is not configured on this deployment (needs "
+            "ALLOW_CALLER_HELD_KEY, GATE2_POLICY_TENANT_ID/NAME/SEMVER/"
+            "BYTECODE_SHA256, and ORG_B_URL). Live deploys do not set these.",
+        )
+    if not req.crossings:
+        raise HTTPException(400, "crossings must be a non-empty list")
+
+    agent_key = Ed25519PrivateKey.generate()
+    agent_pub_der = agent_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
+    )
+    capability = build_capability(
+        tenant_id=GATE2_POLICY_TENANT_ID,
+        name=GATE2_POLICY_NAME,
+        semver=GATE2_POLICY_SEMVER,
+        bytecode_sha256=GATE2_POLICY_BYTECODE_SHA256,
+    )
+    doc = _issuer.issue_vaid_with_key(
+        agent_class="infra-deployer",
+        version="1",
+        tenant_id=TENANT_ID,
+        parent_vaid=None,
+        scope_boundary=[{"kind": "prefix", "value": "harbor-ops/deploy/"}],
+        capability_set=["deploy", capability],
+        public_key_der=agent_pub_der,
+    )
+    _sign_audit({
+        "record_id": str(uuid.uuid4()),
+        "ts": int(time.time() * 1000),
+        "org": "northwind-platform",
+        "action": "mint",
+        "vaid_id": doc["vaid_id"],
+        "parent_vaid": None,
+    })
+    agent_id = _agents.get_or_create("infra-deployer")
+    bundle = {"leaf": doc, "ancestors": [], "agent": {"agent_class": "infra-deployer", "agent_id": agent_id}}
+    _fs_client.collection("vaid_documents").document(doc["vaid_id"]).set(bundle)
+
+    results = []
+    for crossing in req.crossings:
+        pop_body = json.dumps(
+            {"tool": crossing.tool, "resource": crossing.resource}, separators=(",", ":")
+        ).encode()
+        pop_headers = RequestSigner(vaid=doc, private_key=agent_key).sign_headers(
+            "POST", "/mcp/call", pop_body
+        )
+        decision = _cross_to_harbor(
+            doc,
+            [],
+            {
+                "text": crossing.text,
+                "tool": crossing.tool,
+                "action": crossing.action,
+                "resource": crossing.resource,
+            },
+            pop_headers,
+        )
+        results.append({"request": crossing.model_dump(), "decision": decision})
+
+    return {"bundle": bundle, "crossings": results}
+
+
 @app.get("/health")
 @public
 def health():
@@ -258,7 +411,7 @@ def config():
     """Non-secret runtime config the demo page needs: where Org B lives.
     Nothing here is sensitive — it is the same information a public DNS
     lookup would give a stranger."""
-    return {"org_b_url": os.environ.get("ORG_B_URL", "")}
+    return {"org_b_url": os.environ.get("ORG_B_URL", ""), "scenario7_enabled": _scenario7_configured()}
 
 
 class VerifyBundleRequest(BaseModel):

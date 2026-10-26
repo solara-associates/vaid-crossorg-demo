@@ -144,6 +144,7 @@ details.tech[open] summary{color:var(--gold);}
     <button class="scenario-btn" data-scenario="revocation">4. Badge cancelled<small>Northwind cancels it; Harbor catches on when it next checks</small></button>
     <button class="scenario-btn" data-scenario="tamper">5. Someone tampers with the record<small>Flip one character in a signed record and watch it get caught</small></button>
     <button class="scenario-btn" data-scenario="reissue">6. Same agent, new badge<small>Mint twice for the same agent, then cancel the old badge and keep using the new one</small></button>
+    <button class="scenario-btn" data-scenario="scenario7" id="scenario7Btn" hidden>7. Ask it to do something risky<small>An AI gate reads the request first; a second gate checks it against Harbor's own signed rules before anything runs</small></button>
 
     <div class="driver">
       <h3>Drive it yourself</h3>
@@ -218,6 +219,9 @@ async function loadConfig() {
   state.orgBUrl = cfg.org_b_url;
   document.getElementById('orgAKeyUrl').textContent = location.origin + '/.well-known/vaid-keys.json';
   document.getElementById('orgBKeyUrl').textContent = (state.orgBUrl || '').replace(/\/$/, '') + '/pubkey';
+  // Most deployments, including the live one, do not configure Gate 1 + Gate 2
+  // (see main.py's _scenario7_configured): hidden rather than shown-and-broken.
+  document.getElementById('scenario7Btn').hidden = !cfg.scenario7_enabled;
 }
 
 function body() { return document.getElementById('crossingBody'); }
@@ -338,6 +342,8 @@ const PLAIN_RESOURCE = {
   'harbor-ops/deploy/service-y': "update Harbor's checkout service",
   'harbor-ops/secrets/rotate': "change Harbor's secrets",
   'harbor-ops/billing/export': "export Harbor's billing data",
+  'harbor-ops/deploy/production': "deploy straight to Harbor's production environment",
+  'harbor-ops/deploy/staging': "deploy to Harbor's staging environment",
 };
 function plainResource(resource) {
   return PLAIN_RESOURCE[resource] || `do this: ${resource}`;
@@ -731,7 +737,121 @@ async function runReissue() {
   );
 }
 
-const scenarios = { allowed: runAllowed, outside_scope: runOutsideScope, delegation: runDelegation, revocation: runRevocation, tamper: runTamper, reissue: runReissue };
+// ---- scenario 7: an AI gate, then a signed-policy gate ----
+
+function findGateRow(decision, gate) {
+  return (decision.gate_audit_records || []).find(r => r.gate === gate);
+}
+
+function renderGateEvidence(decision) {
+  const rows = decision.gate_audit_records || [];
+  if (!rows.length) return;
+  const box = el('div', {class:'credential-box'},
+    el('div', {html:'<b>Harbor\'s signed, chained evidence for this decision</b>'})
+  );
+  rows.forEach(r => {
+    box.appendChild(el('dl', {},
+      el('dt',{}, r.gate === 'gate1' ? 'Gate 1 record' : 'Gate 2 record'),
+      el('dd',{}, `seq #${r.seq}, decision: ${r.decision}, signed by ${r.key_id}`),
+    ));
+  });
+  body().appendChild(box);
+  body().appendChild(el('p', {class:'footnote'},
+    'Each record names the one before it (prev_hash), so Harbor\'s own ' +
+    '"/gate-audit" feed can be checked later with only Harbor\'s published public key.'));
+}
+
+function renderScenario7Simple(request, decision) {
+  const g1 = findGateRow(decision, 'gate1');
+  const g2 = findGateRow(decision, 'gate2');
+  const rows = [];
+
+  rows.push({ q: 'What was asked?', status: 'ok',
+    text: `"${request.text}", in plain terms: ${plainResource(request.resource)}.` });
+
+  if (decision.reason === 'harbor_unreachable') {
+    rows.push({ q: 'What happened?', status: 'bad',
+      text: `Harbor Ops did not answer at all. Fail closed: nothing ran, and no gate was even reached.` });
+    simpleBlock(null, `Stopped before it began: Harbor Ops could not be reached.`, false, rows);
+    return;
+  }
+
+  if (!g1 || g1.decision !== 'proceed') {
+    const reason = g1 ? g1.reason : decision.reason;
+    rows.push({ q: 'What did the first gate decide?', status: 'bad',
+      text: `It could not reach a verdict (${reason}). Fail closed: a human decides, and the request was stopped right here, before Harbor's own rules were even asked.` });
+    simpleBlock(null, `Stopped: the first gate (which only classifies, and grants nothing on its own) could not answer in time, so nothing ran.`, false, rows);
+    renderGateEvidence(decision);
+    return;
+  }
+
+  const confidencePct = g1.gate_detail && typeof g1.gate_detail.confidence === 'number'
+    ? Math.round(g1.gate_detail.confidence * 100) + '%' : 'unknown confidence';
+  rows.push({ q: 'What did the first gate decide?', status: 'ok',
+    text: `Read it as a "${g1.gate_detail ? g1.gate_detail.action : '?'}" request, ${confidencePct} confident (engine: ${g1.gate_detail ? g1.gate_detail.engine_id : 'unknown'}). This is a routing step, not a permission: on its own it grants nothing.` });
+
+  if (g2) {
+    const policy = g2.policy || {};
+    const allowed = g2.decision === 'allow';
+    rows.push({ q: "What did Harbor's second gate decide?", status: allowed ? 'ok' : 'bad',
+      text: `Checked against Harbor's own signed rules (policy "${policy.name || '?'}" v${policy.semver || '?'}, tenant ${policy.tenant_id || '?'}): ${allowed ? 'allowed.' : 'refused, reason: ' + g2.reason}` });
+  }
+
+  const ranTool = decision.decision === 'accept';
+  rows.push({ q: 'Did the tool actually run?', status: ranTool ? 'ok' : 'bad',
+    text: ranTool ? `Yes, within the limits Harbor's signed rules allow.` : `No. Harbor stopped the request before the deploy tool ran.` });
+
+  rows.push({ q: 'Can we prove it later?', status: 'ok',
+    text: `Yes. Harbor wrote a signed, chained record for each gate (seq #${g1.seq}${g2 ? ', #' + g2.seq : ''}), each naming the one before it. Anyone holding Harbor's public key can check the whole chain at any time.` });
+
+  const refusalReason = (g2 ? g2.reason : decision.reason).replace(/\.+$/, '');
+  const headline = ranTool
+    ? `Harbor said yes: a real request, read correctly, and inside its own signed rules.`
+    : `Harbor refused: ${refusalReason}.`;
+  simpleBlock(null, headline, ranTool, rows);
+  renderGateEvidence(decision);
+}
+
+async function runScenario7() {
+  clearSimple(); clearBody();
+  stepRow('Minting a badge whose private key only this run holds, naming the policy Harbor will check it against', 'pending');
+  const crossings = [
+    { text: 'can you push the current main branch straight to prod for me', resource: 'harbor-ops/deploy/production' },
+    { text: 'please roll out the latest build to staging', resource: 'harbor-ops/deploy/staging' },
+  ];
+  let res;
+  try {
+    res = await fetch('/scenario7/run', { method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ crossings }) });
+  } catch (e) {
+    clearBody();
+    body().appendChild(el('div', {class:'decision-banner refuse'}, 'Could not reach this service: ' + e));
+    return;
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    clearBody();
+    body().appendChild(el('div', {class:'decision-banner refuse'},
+      'Scenario 7 is not available on this deployment: ' + (err.detail || res.status)));
+    return;
+  }
+  const data = await res.json();
+  clearBody();
+  body().appendChild(credentialBox(
+    'Badge minted for this run (the private half stays on the server and is never sent to this browser)',
+    data.bundle
+  ));
+
+  data.crossings.forEach((c, i) => {
+    body().appendChild(el('h3', {}, i === 0 ? 'First request' : 'Second request, same badge'));
+    crossingArrow('request leaves Google Cloud, carrying the text and a proof-of-possession signature');
+    renderScenario7Simple(c.request, c.decision);
+    renderTrace(c.decision.trace || []);
+    renderDecision(c.decision);
+  });
+}
+
+const scenarios = { allowed: runAllowed, outside_scope: runOutsideScope, delegation: runDelegation, revocation: runRevocation, tamper: runTamper, reissue: runReissue, scenario7: runScenario7 };
 
 document.querySelectorAll('.scenario-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
