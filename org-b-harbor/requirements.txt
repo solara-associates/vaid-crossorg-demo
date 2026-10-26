@@ -7,6 +7,12 @@ boto3
 cryptography>=43,<51
 vaid-mint==0.11.0
 vaid-pop>=0.2,<1
-synthera-policy
-synthera-gate1
-synthera-gate2
+# synthera-policy/gate1/gate2 are not on PyPI (synthera's own pyproject.toml
+# carries "Private :: Do Not Upload" on each). Pinned to a commit on synthera
+# main via the git-subdirectory pattern already used by
+# integrations/synthera-langchain/pyproject.toml, so `pip install -r` resolves
+# them on a clean clone with no sibling synthera checkout required. Re-pin the
+# SHA when synthera main moves and these packages need the update.
+synthera-policy @ git+https://github.com/solara-associates/synthera@aa453209bb0f43d981c14410ffe940a0a9fdd6ed#subdirectory=python/synthera-policy
+synthera-gate1 @ git+https://github.com/solara-associates/synthera@aa453209bb0f43d981c14410ffe940a0a9fdd6ed#subdirectory=python/synthera-gate1
+synthera-gate2 @ git+https://github.com/solara-associates/synthera@aa453209bb0f43d981c14410ffe940a0a9fdd6ed#subdirectory=python/synthera-gate2

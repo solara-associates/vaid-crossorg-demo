@@ -30,11 +30,14 @@ sys.path.insert(0, str(APP_DIR))
 
 # The committed, compiled demo policy. Reused rather than re-compiled here so
 # these tests check the same program the deploy script verifies the digest
-# of, the same way `synthera-gate2`'s own test suite does.
+# of, the same way `synthera-gate2`'s own test suite does. Vendored into
+# tests/fixtures/ (it is 1.2KB of hex, not a package) so this suite runs on a
+# clean clone with no sibling synthera checkout. GATE2_CONFORMANCE_DIR still
+# overrides it, for checking against a live synthera checkout's copy.
 _CONFORMANCE_HEX = pathlib.Path(
     os.environ.get(
         "GATE2_CONFORMANCE_DIR",
-        str(pathlib.Path(__file__).resolve().parents[3] / "synthera" / "conformance" / "gate2"),
+        str(pathlib.Path(__file__).resolve().parent / "fixtures" / "conformance" / "gate2"),
     )
 ) / "northwind-infra-agent-3.1.0.bytecode.hex"
 

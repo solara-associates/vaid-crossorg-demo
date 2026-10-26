@@ -94,6 +94,45 @@ def test_an_empty_request_text_escalates_and_never_reaches_gate2(harbor, make_le
     assert [r["gate"] for r in rows] == ["gate1"]
 
 
+def test_gate1_down_escalates_through_the_deployed_handler_and_never_reaches_gate2(
+    harbor, make_leaf, agent_key, monkeypatch
+):
+    """`synthera_gate1`'s own test table
+    (`synthera/python/synthera-gate1/tests/test_fail_closed.py`) already
+    proves `Gate1.classify` escalates on a down/slow/raising decision server.
+    That proves the library; it does not prove this handler actually calls
+    it that way and honours the result — see `prove-the-instrument-before-
+    trusting-the-silence`. This exercises the real failure through
+    `handler.handle`, the same entry point a request hits in staging, not the
+    library directly."""
+    import gates
+    from synthera_gate1.port import DecisionServerError
+
+    def _classifier_is_down(request_text, question):
+        raise DecisionServerError("the classifier did not answer in time")
+
+    monkeypatch.setattr(gates.GATE1._server, "ask_choice", _classifier_is_down)
+
+    leaf = make_leaf(agent_key=agent_key, capability_set=["deploy", _capability(harbor)])
+    request = {
+        "text": "can you push the current main branch straight to prod for me",
+        "tool": "deploy",
+        "action": "deploy",
+        "resource": "harbor-ops/deploy/production",
+    }
+    headers = _pop_headers(leaf, agent_key, "deploy", "harbor-ops/deploy/production")
+
+    resp = harbor.handler.handle(_event(leaf, request, headers))
+    body = json.loads(resp["body"])
+
+    assert resp["statusCode"] == 403
+    assert body["decision"] == "refuse"
+    assert body["reason"] == "gate1_escalate"
+    rows = body["gate_audit_records"]
+    assert [r["gate"] for r in rows] == ["gate1"]
+    assert rows[0]["gate_detail"]["decision"] == "escalate"
+
+
 def test_a_tampered_tool_call_is_refused_by_proof_of_possession(harbor, make_leaf, agent_key):
     """The PoP signature covers `{tool, resource}`; presenting a different
     resource than the one signed must refuse, proving the signature is
