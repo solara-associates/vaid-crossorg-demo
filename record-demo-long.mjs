@@ -131,19 +131,19 @@ await holdLatestDecision();
 await clearCaption();
 
 // ---- Scenario 4: Revocation ----
-await caption('Testing: a first request, before revocation — warms Org B’s cache.');
+await caption('Testing: a first request, before revocation. Warms Org B’s cache.');
 await page.click('.scenario-btn[data-scenario="revocation"]');
 await waitForDecisionCount(1);
 await page.waitForTimeout(600);
 n = await stepThroughFrom(0);
 await holdLatestDecision(2000);
 
-await caption('Revoking on Org A, then retrying immediately — still accepted, inside the cache window.');
+await caption('Revoking on Org A, then retrying immediately. Still accepted, inside the cache window.');
 await waitForDecisionCount(2);
 n = await stepThroughFrom(n);
 await holdLatestDecision(2500);
 
-await caption(`Waiting ${CACHE_WINDOW_SECONDS}s for Org B’s cache window to elapse — this is the real, deliberate trade-off.`);
+await caption(`Waiting ${CACHE_WINDOW_SECONDS}s for Org B’s cache window to elapse. This is the real, deliberate trade-off.`);
 const waitRowLocator = page.locator('#crossingBody .step-row').last();
 await waitRowLocator.scrollIntoViewIfNeeded();
 await page.waitForTimeout((CACHE_WINDOW_SECONDS + 2) * 1000);
@@ -171,7 +171,7 @@ await caption('Flipping one character in one signature, on purpose.');
 await page.click('button.action.secondary');
 await page.waitForTimeout(700);
 
-await caption('Verifying again. Proves: exactly the one altered record fails — everything else still checks out.');
+await caption('Verifying again. Proves: exactly the one altered record fails. Everything else still checks out.');
 await page.click('button.action:not(.secondary)');
 await page.waitForTimeout(1200);
 await page.locator('.decision-banner').last().scrollIntoViewIfNeeded();

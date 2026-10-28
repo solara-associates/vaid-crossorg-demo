@@ -143,6 +143,8 @@ details.tech[open] summary{color:var(--gold);}
     <button class="scenario-btn" data-scenario="delegation">3. Agent hands work to a helper<small>One hand-off is fine; a second is refused</small></button>
     <button class="scenario-btn" data-scenario="revocation">4. Badge cancelled<small>Northwind cancels it; Harbor catches on when it next checks</small></button>
     <button class="scenario-btn" data-scenario="tamper">5. Someone tampers with the record<small>Flip one character in a signed record and watch it get caught</small></button>
+    <button class="scenario-btn" data-scenario="reissue">6. Same agent, new badge<small>Mint twice for the same agent, then cancel the old badge and keep using the new one</small></button>
+    <button class="scenario-btn" data-scenario="scenario7" id="scenario7Btn" hidden>7. Ask it to do something risky<small>An AI gate reads the request first; a second gate checks it against Harbor's own signed rules before anything runs</small></button>
 
     <div class="driver">
       <h3>Drive it yourself</h3>
@@ -189,7 +191,8 @@ details.tech[open] summary{color:var(--gold);}
 
 <footer>
   Northwind's public key: <code id="orgAKeyUrl"></code> &middot; Harbor Ops' public key: <code id="orgBKeyUrl"></code><br>
-  This page makes no claim the running system does not back. Anything simulated is labelled as such.
+  This page makes no claim the running system does not back. Anything simulated is labelled as such.<br>
+  Build <code id="buildMarker">__BUILD_SHA__</code>
 </footer>
 
 <script>
@@ -216,6 +219,9 @@ async function loadConfig() {
   state.orgBUrl = cfg.org_b_url;
   document.getElementById('orgAKeyUrl').textContent = location.origin + '/.well-known/vaid-keys.json';
   document.getElementById('orgBKeyUrl').textContent = (state.orgBUrl || '').replace(/\/$/, '') + '/pubkey';
+  // Most deployments, including the live one, do not configure Gate 1 + Gate 2
+  // (see main.py's _scenario7_configured): hidden rather than shown-and-broken.
+  document.getElementById('scenario7Btn').hidden = !cfg.scenario7_enabled;
 }
 
 function body() { return document.getElementById('crossingBody'); }
@@ -236,18 +242,28 @@ function stepRow(label, status, detail) {
   return row;
 }
 
-function credentialBox(title, leaf, ancestors) {
+function credentialBox(title, bundle) {
+  const leaf = bundle.leaf, ancestors = bundle.ancestors, agent = bundle.agent;
   const depth = (ancestors || []).length;
   const scope = (leaf.scope_boundary || []).map(s => `${s.kind}:${s.value}`).join(', ');
+  const agentLine = agent ? `${agent.agent_class} · ${agent.agent_id}` : leaf.agent_class;
+  const dlChildren = [
+    el('dt',{},'trust domain'), el('dd',{},leaf.trust_domain),
+    el('dt',{},'Agent (stable identity)'), el('dd',{},agentLine),
+    el('dt',{},'Credential (this badge)'), el('dd',{},leaf.vaid_id),
+  ];
+  if (depth > 0) {
+    const parent = ancestors[ancestors.length - 1];
+    dlChildren.push(el('dt',{},'Handed off from'), el('dd',{},`${parent.agent_class} · ${parent.vaid_id}`));
+  }
+  dlChildren.push(
+    el('dt',{},'scope boundary'), el('dd',{},scope),
+    el('dt',{},'lineage depth'), el('dd',{},String(depth)),
+    el('dt',{},'expiry'), el('dd',{},leaf.expires_at),
+  );
   const box = el('div', {class:'credential-box'},
     el('div', {html:`<b>${title}</b>`}),
-    el('dl', {},
-      el('dt',{},'trust domain'), el('dd',{},leaf.trust_domain),
-      el('dt',{},'agent'), el('dd',{},`${leaf.agent_class} (${leaf.vaid_id})`),
-      el('dt',{},'scope boundary'), el('dd',{},scope),
-      el('dt',{},'lineage depth'), el('dd',{},String(depth)),
-      el('dt',{},'expiry'), el('dd',{},leaf.expires_at),
-    )
+    el('dl', {}, ...dlChildren)
   );
   return box;
 }
@@ -294,7 +310,7 @@ function renderTrace(trace) {
 
 function renderDecision(decision) {
   const banner = el('div', {class:'decision-banner ' + (decision.decision === 'accept' ? 'accept' : 'refuse')},
-    `${decision.decision.toUpperCase()} — reason: ${decision.reason} (agent: ${decision.agent_class || 'n/a'}, ${decision.latency_ms}ms round trip)`);
+    `${decision.decision.toUpperCase()}. Reason: ${decision.reason} (agent: ${decision.agent_class || 'n/a'}, ${decision.latency_ms}ms round trip)`);
   body().appendChild(banner);
   if (decision.audit_record) {
     body().appendChild(el('div', {class:'credential-box'},
@@ -326,12 +342,23 @@ const PLAIN_RESOURCE = {
   'harbor-ops/deploy/service-y': "update Harbor's checkout service",
   'harbor-ops/secrets/rotate': "change Harbor's secrets",
   'harbor-ops/billing/export': "export Harbor's billing data",
+  'harbor-ops/deploy/production': "deploy straight to Harbor's production environment",
+  'harbor-ops/deploy/staging': "deploy to Harbor's staging environment",
 };
 function plainResource(resource) {
   return PLAIN_RESOURCE[resource] || `do this: ${resource}`;
 }
 
 function findStep(trace, name) { return (trace || []).find(s => s.step === name); }
+
+const STEP_LABELS = {
+  trust_domain_allowlist: 'trust domain check',
+  public_key_fetch: 'key fetch',
+  signature: 'signature check',
+  expiry: 'expiry check',
+  revocation: 'revocation check',
+  delegation_depth_and_attenuation: 'delegation depth',
+};
 
 function simpleRow(q, status, text) {
   const icon = status === 'ok' ? '✓' : status === 'warn' ? '!' : '✕';
@@ -372,7 +399,7 @@ function renderStandardSimple(sub, leaf, resource, decision) {
   if (revStep && !revStep.ok) {
     allowedRow = { q: 'Are they allowed to do this?', status: 'bad', text: `No. Northwind cancelled this badge, and Harbor has now noticed.` };
   } else if (depthStep && !depthStep.ok && chainOk) {
-    allowedRow = { q: 'Are they allowed to do this?', status: 'bad', text: `No. This badge was handed down twice, and Harbor only accepts one hand-off.` };
+    allowedRow = { q: 'Are they allowed to do this?', status: 'bad', text: `No. This badge was handed down twice, and Harbor's own policy only accepts one hand-off.` };
   } else if (scopeStep && !scopeStep.ok) {
     allowedRow = { q: 'Are they allowed to do this?', status: 'bad', text: `No. It asked to ${plainResource(resource)}, which this badge doesn't cover.` };
   } else if (decision.decision === 'accept') {
@@ -389,7 +416,7 @@ function renderStandardSimple(sub, leaf, resource, decision) {
   let headline;
   if (decision.decision === 'accept') headline = `Harbor said yes: a real job, within the agent's badge.`;
   else if (decision.reason === 'outside_scope') headline = `Harbor refused: the agent was genuine, but asked for something its badge doesn't cover.`;
-  else if (decision.reason === 'delegation_depth_exceeded') headline = `Harbor refused: Northwind's rules only allow one hand-off, and this is the second.`;
+  else if (decision.reason === 'delegation_depth_exceeded') headline = `Harbor refused: Harbor's own rules only allow one hand-off, and this is the second.`;
   else if (decision.reason === 'revoked') headline = `Harbor refused: the badge was cancelled.`;
   else headline = `Harbor refused this request (reason: ${decision.reason}).`;
 
@@ -399,23 +426,37 @@ function renderStandardSimple(sub, leaf, resource, decision) {
 function renderScopePanel(leaf, resource, trace) {
   const scopeStep = findStep(trace, 'scope_policy');
   const granted = (leaf.scope_boundary || [])[0];
-  const grantedStr = granted ? `${granted.kind}: ${granted.value}` : 'none';
+  const grantedStr = granted ? granted.value : 'none';
   const grantedValue = granted ? granted.value : '';
+
+  let harborStr;
+  if (scopeStep) {
+    const harborPrefixes = scopeStep.detail.harbor_granted_prefixes || [];
+    harborStr = harborPrefixes.length ? harborPrefixes.join(', ') : 'nothing for this trust domain';
+  } else {
+    const lastStep = (trace && trace.length) ? trace[trace.length - 1] : null;
+    const stepLabel = lastStep ? STEP_LABELS[lastStep.step] || lastStep.step.replace(/_/g,' ') : 'an earlier check';
+    harborStr = `Not checked: refused earlier at ${stepLabel}`;
+  }
 
   let matchLen = 0;
   while (matchLen < grantedValue.length && matchLen < resource.length && grantedValue[matchLen] === resource[matchLen]) matchLen++;
   const resourceHtml = `<span class="match">${esc(resource.slice(0, matchLen))}</span><span class="extra">${esc(resource.slice(matchLen))}</span>`;
 
+  const insideBadge = grantedValue ? resource.startsWith(grantedValue) : false;
+
   let resultClass = 'unknown', resultText = 'Not evaluated: refused earlier in the check';
   if (scopeStep) {
-    resultClass = scopeStep.ok ? 'inside' : 'outside';
-    resultText = scopeStep.ok ? 'INSIDE granted scope' : 'OUTSIDE granted scope';
+    if (!insideBadge) { resultClass = 'outside'; resultText = 'Outside the badge'; }
+    else if (!scopeStep.ok) { resultClass = 'outside'; resultText = "Inside the badge, but outside Harbor's own policy"; }
+    else { resultClass = 'inside'; resultText = "Inside the badge and inside Harbor's own policy"; }
   }
 
   body().appendChild(el('div', {class:'scope-panel'},
     el('h4', {}, 'Scope decision'),
-    el('div', {class:'scope-row'}, el('dt',{},'Granted scope (from the credential)'), el('dd',{},grantedStr)),
-    el('div', {class:'scope-row'}, el('dt',{},'Requested resource'), el('dd', {class:'scope-resource', html:resourceHtml})),
+    el('div', {class:'scope-row'}, el('dt',{},'Badge allows'), el('dd',{},grantedStr)),
+    el('div', {class:'scope-row'}, el('dt',{},`Harbor allows ${leaf.agent_class || 'this agent'}`), el('dd',{},harborStr)),
+    el('div', {class:'scope-row'}, el('dt',{},'Requested'), el('dd', {class:'scope-resource', html:resourceHtml})),
     el('div', {class:'scope-row'}, el('dt',{},'Result'), el('dd',{}, el('span', {class:'scope-result ' + resultClass}, resultText))),
   ));
 }
@@ -436,9 +477,9 @@ function deselectScenarios() {
 async function runAllowed() {
   clearSimple(); clearBody();
   stepRow('Minting root credential on Northwind', 'pending');
-  state.root = await mintRoot('harbor-ops/', ['deploy']);
+  state.root = await mintRoot('harbor-ops/deploy/', ['deploy']);
   clearBody();
-  body().appendChild(credentialBox('1. Credential minted on Northwind', state.root.leaf, state.root.ancestors));
+  body().appendChild(credentialBox('1. Credential minted on Northwind', state.root));
   crossingArrow('request leaves Google Cloud: only the badge and the request cross');
   const resource = 'harbor-ops/deploy/service-x';
   const { decision } = await crossToOrgB(state.root, resource, state.cacheWindow);
@@ -450,8 +491,8 @@ async function runAllowed() {
 
 async function runOutsideScope() {
   clearSimple(); clearBody();
-  if (!state.root) state.root = await mintRoot('harbor-ops/', ['deploy']);
-  body().appendChild(credentialBox('Credential (same badge as "Allowed job")', state.root.leaf, state.root.ancestors));
+  if (!state.root) state.root = await mintRoot('harbor-ops/deploy/', ['deploy']);
+  body().appendChild(credentialBox('Credential (same badge as "Allowed job")', state.root));
   crossingArrow('request leaves Google Cloud: this time asking for something outside the granted scope');
   const resource = 'harbor-ops/secrets/rotate';
   const { decision } = await crossToOrgB(state.root, resource, state.cacheWindow);
@@ -464,12 +505,13 @@ async function runOutsideScope() {
 async function runDelegation() {
   clearSimple(); clearBody();
   stepRow('Minting a root badge, then handing a copy to a helper', 'pending');
-  state.root = await mintRoot('harbor-ops/', ['deploy']);
+  state.root = await mintRoot('harbor-ops/deploy/', ['deploy']);
   state.child = await mintDelegate(state.root.leaf.vaid_id, 'infra-agent-sub', 'harbor-ops/deploy/', ['deploy']);
   clearBody();
   const resource = 'harbor-ops/deploy/service-x';
 
-  body().appendChild(credentialBox('Depth-1 delegate credential', state.child.leaf, state.child.ancestors));
+  body().appendChild(credentialBox('Depth-0 root credential', state.root));
+  body().appendChild(credentialBox('Depth-1 delegate credential', state.child));
   crossingArrow('depth-1 request leaves Google Cloud');
   const d1 = await crossToOrgB(state.child, resource, state.cacheWindow);
   renderStandardSimple('One hand-off', state.child.leaf, resource, d1.decision);
@@ -479,7 +521,7 @@ async function runDelegation() {
 
   body().appendChild(el('h3', {}, 'Now a second hand-off (depth 2)'));
   state.grandchild = await mintDelegate(state.child.leaf.vaid_id, 'infra-agent-sub-sub', 'harbor-ops/deploy/', ['deploy']);
-  body().appendChild(credentialBox('Depth-2 delegate credential', state.grandchild.leaf, state.grandchild.ancestors));
+  body().appendChild(credentialBox('Depth-2 delegate credential', state.grandchild));
   crossingArrow('depth-2 request leaves Google Cloud');
   const d2 = await crossToOrgB(state.grandchild, resource, state.cacheWindow);
   renderStandardSimple('Two hand-offs', state.grandchild.leaf, resource, d2.decision);
@@ -492,10 +534,10 @@ async function runRevocation() {
   clearSimple(); clearBody();
   const resource = 'harbor-ops/deploy/service-x';
   stepRow(`Minting a fresh badge, asking once to warm Harbor's ${state.cacheWindow}s recheck window`, 'pending');
-  state.root = await mintRoot('harbor-ops/', ['deploy']);
+  state.root = await mintRoot('harbor-ops/deploy/', ['deploy']);
   const first = await crossToOrgB(state.root, resource, state.cacheWindow);
   clearBody();
-  body().appendChild(credentialBox('Credential', state.root.leaf, state.root.ancestors));
+  body().appendChild(credentialBox('Credential', state.root));
 
   body().appendChild(el('h3', {}, 'Before cancelling'));
   renderStandardSimple('Before cancelling', state.root.leaf, resource, first.decision);
@@ -573,7 +615,7 @@ async function runTamper() {
     ]
   );
 
-  body().appendChild(el('h3', {}, 'Evidence bundle (editable — try flipping one character in a signature below)'));
+  body().appendChild(el('h3', {}, 'Evidence bundle (editable: try flipping one character in a signature below)'));
   const ta = el('textarea', {class:'bundle'});
   ta.value = JSON.stringify(bundle, null, 2);
   body().appendChild(ta);
@@ -607,7 +649,7 @@ async function runTamper() {
     const line = (org, results) => {
       const bad = results.filter(r => !r.signature_valid);
       resultsDiv.appendChild(el('div', {class:'decision-banner ' + (bad.length ? 'refuse' : 'accept')},
-        `${org}: ${results.length - bad.length}/${results.length} records verify against the published public key${bad.length ? ' — ' + bad.length + ' FAILED (tampered or corrupted)' : ''}`));
+        `${org}: ${results.length - bad.length}/${results.length} records verify against the published public key${bad.length ? '. ' + bad.length + ' FAILED (tampered or corrupted)' : ''}`));
       simpleBlock(org,
         bad.length ? `Caught it: ${bad.length} of ${results.length} ${org} record(s) no longer match their signature.` : `Clean: all ${results.length} ${org} record(s) still match their signature.`,
         bad.length === 0,
@@ -623,7 +665,193 @@ async function runTamper() {
   };
 }
 
-const scenarios = { allowed: runAllowed, outside_scope: runOutsideScope, delegation: runDelegation, revocation: runRevocation, tamper: runTamper };
+async function runReissue() {
+  clearSimple(); clearBody();
+  stepRow('Minting a badge for infra-agent, then minting it a second time', 'pending');
+  const first = await mintRoot('harbor-ops/deploy/', ['deploy']);
+  const second = await mintRoot('harbor-ops/deploy/', ['deploy']);
+  clearBody();
+
+  const sameAgent = first.agent.agent_id === second.agent.agent_id;
+  const differentCredential = first.leaf.vaid_id !== second.leaf.vaid_id;
+
+  body().appendChild(credentialBox('First badge', first));
+  body().appendChild(credentialBox('Second badge, same agent', second));
+
+  simpleBlock(null,
+    sameAgent && differentCredential
+      ? `Proven: the same agent, two different badges.`
+      : `Unexpected: this should have been the same agent with two different badges.`,
+    sameAgent && differentCredential,
+    [
+      { q: 'Is it the same agent both times?', status: sameAgent ? 'ok' : 'bad',
+        text: sameAgent ? `Yes. Agent identity ${first.agent.agent_id} stayed the same across both mints.` : `No. Northwind issued two different agent identities.` },
+      { q: 'Is it the same badge both times?', status: differentCredential ? 'ok' : 'bad',
+        text: differentCredential ? `No, and it should not be. Badge 1: ${first.leaf.vaid_id}. Badge 2: ${second.leaf.vaid_id}.` : `Both badges carry the same credential id, which should never happen.` },
+    ]
+  );
+
+  const resource = 'harbor-ops/deploy/service-x';
+  body().appendChild(el('h3', {}, 'Cancelling the first badge on Northwind'));
+  await revokeVaid(first.leaf.vaid_id);
+
+  // Harbor caches Northwind's revocation list for state.cacheWindow seconds
+  // (scenario 4), so a check made inside that window can still read stale
+  // "clean" state from before this cancel. Wait it out, visibly, before
+  // testing either badge, so what Harbor reports here is never stale.
+  body().appendChild(el('h3', {}, `Waiting ${state.cacheWindow}s for Harbor's recheck window to pass`));
+  const waitRow = stepRow('waiting', 'pending', '');
+  for (let s = state.cacheWindow; s > 0; s--) {
+    waitRow.querySelector('.detail').textContent = `${s}s remaining`;
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  waitRow.querySelector('.badge').className = 'badge ok';
+  waitRow.querySelector('.badge').textContent = '✓';
+  waitRow.querySelector('.detail').textContent = 'recheck window elapsed';
+
+  const oldResult = await crossToOrgB(first, resource, state.cacheWindow);
+  body().appendChild(el('h4', {}, 'Old badge (cancelled)'));
+  renderScopePanel(first.leaf, resource, oldResult.decision.trace);
+  renderTrace(oldResult.decision.trace);
+  renderDecision(oldResult.decision);
+
+  const newResult = await crossToOrgB(second, resource, state.cacheWindow);
+  body().appendChild(el('h4', {}, 'New badge (never cancelled)'));
+  renderScopePanel(second.leaf, resource, newResult.decision.trace);
+  renderTrace(newResult.decision.trace);
+  renderDecision(newResult.decision);
+
+  const oldRefused = oldResult.decision.decision === 'refuse';
+  const newAccepted = newResult.decision.decision === 'accept';
+  simpleBlock('After cancelling the old badge',
+    oldRefused && newAccepted
+      ? `Proven: cancelling one badge does not touch the agent's other, newly issued badge.`
+      : `Unexpected result; see the technical detail above.`,
+    oldRefused && newAccepted,
+    [
+      { q: 'What happened to the cancelled badge?', status: oldRefused ? 'ok' : 'bad',
+        text: oldRefused ? `Harbor refused it (reason: ${oldResult.decision.reason}).` : `Harbor still accepted it, which should not happen.` },
+      { q: 'What happened to the new badge for the same agent?', status: newAccepted ? 'ok' : 'bad',
+        text: newAccepted ? `Harbor accepted it. Cancelling the old badge did not touch this one.` : `Harbor refused it (reason: ${newResult.decision.reason}), which should not happen.` },
+    ]
+  );
+}
+
+// ---- scenario 7: an AI gate, then a signed-policy gate ----
+
+function findGateRow(decision, gate) {
+  return (decision.gate_audit_records || []).find(r => r.gate === gate);
+}
+
+function renderGateEvidence(decision) {
+  const rows = decision.gate_audit_records || [];
+  if (!rows.length) return;
+  const box = el('div', {class:'credential-box'},
+    el('div', {html:'<b>Harbor\'s signed, chained evidence for this decision</b>'})
+  );
+  rows.forEach(r => {
+    box.appendChild(el('dl', {},
+      el('dt',{}, r.gate === 'gate1' ? 'Gate 1 record' : 'Gate 2 record'),
+      el('dd',{}, `seq #${r.seq}, decision: ${r.decision}, signed by ${r.key_id}`),
+    ));
+  });
+  body().appendChild(box);
+  body().appendChild(el('p', {class:'footnote'},
+    'Each record names the one before it (prev_hash), so Harbor\'s own ' +
+    '"/gate-audit" feed can be checked later with only Harbor\'s published public key.'));
+}
+
+function renderScenario7Simple(request, decision) {
+  const g1 = findGateRow(decision, 'gate1');
+  const g2 = findGateRow(decision, 'gate2');
+  const rows = [];
+
+  rows.push({ q: 'What was asked?', status: 'ok',
+    text: `"${request.text}", in plain terms: ${plainResource(request.resource)}.` });
+
+  if (decision.reason === 'harbor_unreachable') {
+    rows.push({ q: 'What happened?', status: 'bad',
+      text: `Harbor Ops did not answer at all. Fail closed: nothing ran, and no gate was even reached.` });
+    simpleBlock(null, `Stopped before it began: Harbor Ops could not be reached.`, false, rows);
+    return;
+  }
+
+  if (!g1 || g1.decision !== 'proceed') {
+    const reason = g1 ? g1.reason : decision.reason;
+    rows.push({ q: 'What did the first gate decide?', status: 'bad',
+      text: `It could not reach a verdict (${reason}). Fail closed: a human decides, and the request was stopped right here, before Harbor's own rules were even asked.` });
+    simpleBlock(null, `Stopped: the first gate (which only classifies, and grants nothing on its own) could not answer in time, so nothing ran.`, false, rows);
+    renderGateEvidence(decision);
+    return;
+  }
+
+  const confidencePct = g1.gate_detail && typeof g1.gate_detail.confidence === 'number'
+    ? Math.round(g1.gate_detail.confidence * 100) + '%' : 'unknown confidence';
+  rows.push({ q: 'What did the first gate decide?', status: 'ok',
+    text: `Read it as a "${g1.gate_detail ? g1.gate_detail.action : '?'}" request, ${confidencePct} confident (engine: ${g1.gate_detail ? g1.gate_detail.engine_id : 'unknown'}). This is a routing step, not a permission: on its own it grants nothing.` });
+
+  if (g2) {
+    const policy = g2.policy || {};
+    const allowed = g2.decision === 'allow';
+    rows.push({ q: "What did Harbor's second gate decide?", status: allowed ? 'ok' : 'bad',
+      text: `Checked against Harbor's own signed rules (policy "${policy.name || '?'}" v${policy.semver || '?'}, tenant ${policy.tenant_id || '?'}): ${allowed ? 'allowed.' : 'refused, reason: ' + g2.reason}` });
+  }
+
+  const ranTool = decision.decision === 'accept';
+  rows.push({ q: 'Did the tool actually run?', status: ranTool ? 'ok' : 'bad',
+    text: ranTool ? `Yes, within the limits Harbor's signed rules allow.` : `No. Harbor stopped the request before the deploy tool ran.` });
+
+  rows.push({ q: 'Can we prove it later?', status: 'ok',
+    text: `Yes. Harbor wrote a signed, chained record for each gate (seq #${g1.seq}${g2 ? ', #' + g2.seq : ''}), each naming the one before it. Anyone holding Harbor's public key can check the whole chain at any time.` });
+
+  const refusalReason = (g2 ? g2.reason : decision.reason).replace(/\.+$/, '');
+  const headline = ranTool
+    ? `Harbor said yes: a real request, read correctly, and inside its own signed rules.`
+    : `Harbor refused: ${refusalReason}.`;
+  simpleBlock(null, headline, ranTool, rows);
+  renderGateEvidence(decision);
+}
+
+async function runScenario7() {
+  clearSimple(); clearBody();
+  stepRow('Minting a badge whose private key only this run holds, naming the policy Harbor will check it against', 'pending');
+  const crossings = [
+    { text: 'can you push the current main branch straight to prod for me', resource: 'harbor-ops/deploy/production' },
+    { text: 'please roll out the latest build to staging', resource: 'harbor-ops/deploy/staging' },
+  ];
+  let res;
+  try {
+    res = await fetch('/scenario7/run', { method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ crossings }) });
+  } catch (e) {
+    clearBody();
+    body().appendChild(el('div', {class:'decision-banner refuse'}, 'Could not reach this service: ' + e));
+    return;
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    clearBody();
+    body().appendChild(el('div', {class:'decision-banner refuse'},
+      'Scenario 7 is not available on this deployment: ' + (err.detail || res.status)));
+    return;
+  }
+  const data = await res.json();
+  clearBody();
+  body().appendChild(credentialBox(
+    'Badge minted for this run (the private half stays on the server and is never sent to this browser)',
+    data.bundle
+  ));
+
+  data.crossings.forEach((c, i) => {
+    body().appendChild(el('h3', {}, i === 0 ? 'First request' : 'Second request, same badge'));
+    crossingArrow('request leaves Google Cloud, carrying the text and a proof-of-possession signature');
+    renderScenario7Simple(c.request, c.decision);
+    renderTrace(c.decision.trace || []);
+    renderDecision(c.decision);
+  });
+}
+
+const scenarios = { allowed: runAllowed, outside_scope: runOutsideScope, delegation: runDelegation, revocation: runRevocation, tamper: runTamper, reissue: runReissue, scenario7: runScenario7 };
 
 document.querySelectorAll('.scenario-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
@@ -652,12 +880,12 @@ document.getElementById('sendJobBtn').addEventListener('click', async () => {
   try {
     const driverStatus = document.getElementById('driverStatus');
     if (!state.driver) {
-      state.driver = await mintRoot('harbor-ops/', ['deploy']);
+      state.driver = await mintRoot('harbor-ops/deploy/', ['deploy']);
       driverStatus.className = 'status';
       driverStatus.textContent = `Badge issued: ${state.driver.leaf.vaid_id} (active). Sending the job now.`;
     }
     clearSimple(); clearBody();
-    body().appendChild(credentialBox('Your badge', state.driver.leaf, state.driver.ancestors));
+    body().appendChild(credentialBox('Your badge', state.driver));
     crossingArrow('request leaves Google Cloud');
     const { decision } = await crossToOrgB(state.driver, resource, state.cacheWindow);
     renderStandardSimple(null, state.driver.leaf, resource, decision);

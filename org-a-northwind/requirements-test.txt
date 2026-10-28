@@ -1,0 +1,6 @@
+# Dev/test-only. Not part of the deployed Cloud Run image (requirements.txt
+# is what deploy.sh installs); this is what `pytest` itself needs to run this
+# service's suite from a clean clone.
+-r requirements.txt
+pytest>=8
+httpx>=0.27

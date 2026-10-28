@@ -44,6 +44,9 @@ def is_trust_domain_allowed(trust_domain: str) -> bool:
     return trust_domain in ALLOWED_TRUST_DOMAINS
 
 
+def granted_prefixes(trust_domain: str) -> list[str]:
+    return GRANTED_RESOURCE_PREFIXES.get(trust_domain, [])
+
+
 def resource_in_scope(trust_domain: str, agent_class: str, resource: str) -> bool:
-    prefixes = GRANTED_RESOURCE_PREFIXES.get(trust_domain, [])
-    return any(resource.startswith(p) for p in prefixes)
+    return any(resource.startswith(p) for p in granted_prefixes(trust_domain))
