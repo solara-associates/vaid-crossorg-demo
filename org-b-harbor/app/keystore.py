@@ -37,8 +37,16 @@ def get_org_a_public_key(trust_domain: str, cache_window_seconds: int) -> tuple[
     if cached and (now - cached["fetched_at"]) < cache_window_seconds:
         return cached["der"], cached["key_id"], True
 
+    # 10s, not 5s: CloudWatch evidence from session s499 showed a cold-start
+    # Lambda (948ms init) plus a cold-start Cloud Run revision on the other
+    # side together pushed this fetch to 5472ms total - just over the old
+    # 5000ms ceiling - on the first real request after a double redeploy.
+    # The very next request, both sides warm, took 1080ms. 10s stays well
+    # inside this Lambda's own 15s function timeout (--timeout 15 in the
+    # deploy script), leaving ~5s margin for the rest of handler.py, which
+    # the warm-path data above shows normally takes well under 100ms.
     url = f"https://{trust_domain}/.well-known/vaid-keys.json"
-    with urllib.request.urlopen(url, timeout=5) as resp:  # noqa: S310 - fixed https scheme, allowlisted domain
+    with urllib.request.urlopen(url, timeout=10) as resp:  # noqa: S310 - fixed https scheme, allowlisted domain
         doc = json.loads(resp.read())
     key = doc["keys"][0]
     der = base64.b64decode(key["public_key_b64"])
