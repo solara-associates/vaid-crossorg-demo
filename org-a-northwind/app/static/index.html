@@ -144,7 +144,7 @@ details.tech[open] summary{color:var(--gold);}
     <button class="scenario-btn" data-scenario="revocation">4. Badge cancelled<small>Northwind cancels it; Harbor catches on when it next checks</small></button>
     <button class="scenario-btn" data-scenario="tamper">5. Someone tampers with the record<small>Flip one character in a signed record and watch it get caught</small></button>
     <button class="scenario-btn" data-scenario="reissue">6. Same agent, new badge<small>Mint twice for the same agent, then cancel the old badge and keep using the new one</small></button>
-    <button class="scenario-btn" data-scenario="scenario7" id="scenario7Btn" hidden>7. Ask it to do something risky<small>An AI gate reads the request first; a second gate checks it against Harbor's own signed rules before anything runs</small></button>
+    <button class="scenario-btn" data-scenario="scenario7" id="scenario7Btn" hidden>7. Ask it to do something risky<small>A first gate reads the request; a second gate checks it against Harbor's own signed rules before anything runs. The result below names which engine actually ran the first gate.</small></button>
 
     <div class="driver">
       <h3>Drive it yourself</h3>
@@ -737,7 +737,22 @@ async function runReissue() {
   );
 }
 
-// ---- scenario 7: an AI gate, then a signed-policy gate ----
+// ---- scenario 7: a first gate, then a signed-policy gate ----
+//
+// The first gate's engine is configurable (GATE1_ENGINE) and can change
+// between deploys. Nothing on this screen names it as "AI" in a static
+// label any more - this label is built from the engine_id the deployed
+// Lambda actually reports in the trace, never guessed or hardcoded, so a
+// rule-based deploy and a model-backed one read honestly here either way.
+function engineLabel(engineId) {
+  if (!engineId) return 'unknown engine';
+  if (engineId.startsWith('bedrock-llm-classifier')) return 'Bedrock AI classifier';
+  if (engineId.startsWith('vertex-llm-classifier')) return 'Vertex AI classifier';
+  if (engineId.startsWith('rule-based-classifier')) return 'rule-based classifier (no AI model)';
+  // An engine this page does not yet recognise still shows its real id
+  // rather than a label that might not be true of it.
+  return engineId;
+}
 
 function findGateRow(decision, gate) {
   return (decision.gate_audit_records || []).find(r => r.gate === gate);
@@ -778,8 +793,9 @@ function renderScenario7Simple(request, decision) {
 
   if (!g1 || g1.decision !== 'proceed') {
     const reason = g1 ? g1.reason : decision.reason;
-    rows.push({ q: 'What did the first gate decide?', status: 'bad',
-      text: `It could not reach a verdict (${reason}). Fail closed: a human decides, and the request was stopped right here, before Harbor's own rules were even asked.` });
+    const engine = engineLabel(g1 && g1.gate_detail ? g1.gate_detail.engine_id : null);
+    rows.push({ q: 'First gate:', status: 'bad',
+      text: `${engine}. It could not reach a verdict (${reason}). Fail closed: a human decides, and the request was stopped right here, before Harbor's own rules were even asked.` });
     simpleBlock(null, `Stopped: the first gate (which only classifies, and grants nothing on its own) could not answer in time, so nothing ran.`, false, rows);
     renderGateEvidence(decision);
     return;
@@ -787,8 +803,9 @@ function renderScenario7Simple(request, decision) {
 
   const confidencePct = g1.gate_detail && typeof g1.gate_detail.confidence === 'number'
     ? Math.round(g1.gate_detail.confidence * 100) + '%' : 'unknown confidence';
-  rows.push({ q: 'What did the first gate decide?', status: 'ok',
-    text: `Read it as a "${g1.gate_detail ? g1.gate_detail.action : '?'}" request, ${confidencePct} confident (engine: ${g1.gate_detail ? g1.gate_detail.engine_id : 'unknown'}). This is a routing step, not a permission: on its own it grants nothing.` });
+  const engine = engineLabel(g1.gate_detail ? g1.gate_detail.engine_id : null);
+  rows.push({ q: 'First gate:', status: 'ok',
+    text: `${engine}. Read it as a "${g1.gate_detail ? g1.gate_detail.action : '?'}" request, ${confidencePct} confident. This is a routing step, not a permission: on its own it grants nothing.` });
 
   if (g2) {
     const policy = g2.policy || {};
