@@ -786,8 +786,8 @@ async function runScenario7() {
   clearSimple(); clearBody();
   stepRow('Minting a badge whose private key only this run holds, naming the policy Harbor will check it against', 'pending');
   const crossings = [
-    { text: 'can you push the current main branch straight to prod for me', resource: 'harbor-ops/deploy/production' },
     { text: 'please roll out the latest build to staging', resource: 'harbor-ops/deploy/staging' },
+    { text: 'can you push the current main branch straight to prod for me', resource: 'harbor-ops/deploy/production' },
   ];
   let res;
   try {
