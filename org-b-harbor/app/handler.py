@@ -63,14 +63,13 @@ def handle(event: dict) -> dict:
         action=request.get("action", "deploy"),
         resource=resource,
     )
-    # Demo-only knob: the crossing view lets a viewer set the cache window
-    # visibly, including shorter than the deployed default, so the revocation
-    # scenario is demonstrable without a multi-minute wait. Bounded so the
-    # demo page cannot push it below 1s or above the deployed default.
+    # Demo-only knob: the crossing view always sends 0 (check on every
+    # request, matching production). Bounded so a caller cannot push it
+    # below 0s or above the deployed default.
     cache_window = CACHE_WINDOW_SECONDS
     if "cache_window_seconds" in request:
         try:
-            cache_window = max(1, min(int(request["cache_window_seconds"]), CACHE_WINDOW_SECONDS))
+            cache_window = max(0, min(int(request["cache_window_seconds"]), CACHE_WINDOW_SECONDS))
         except (TypeError, ValueError):
             pass
 

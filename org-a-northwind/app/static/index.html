@@ -34,10 +34,6 @@ header p{color:var(--text-dim);margin:4px 0 0;font-size:0.95rem;}
 .scenario-btn.active{border-color:var(--gold);color:var(--gold);}
 .scenario-btn small{display:block;color:var(--text-dim);font-size:0.8rem;margin-top:3px;font-weight:400;}
 .scenario-btn:disabled{opacity:0.55;cursor:default;}
-.settings{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);}
-.settings label{display:block;font-size:0.8rem;color:var(--text-dim);margin-bottom:6px;}
-.settings input[type=range]{width:100%;}
-.settings .val{color:var(--gold);font-weight:600;}
 .crossing{min-height:460px;}
 .step-row{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);}
 .step-row:last-child{border-bottom:none;}
@@ -171,11 +167,6 @@ details.tech[open] summary{color:var(--gold);}
       <p class="status" id="driverStatus">No badge issued yet. Click "Send the job" to issue one and try it.</p>
     </div>
 
-    <div class="settings">
-      <label>How often Harbor rechecks for a cancelled badge: <span class="val" id="cacheWindowVal">60s</span></label>
-      <input type="range" id="cacheWindow" min="1" max="60" value="60">
-      <p class="footnote">Lower this before scenario 4 so the effect of cancelling a badge is visible in under a minute. 60 seconds is the real, deployed default on both sides.</p>
-    </div>
   </div>
 
   <div class="panel crossing" id="crossing">
@@ -196,7 +187,7 @@ details.tech[open] summary{color:var(--gold);}
 </footer>
 
 <script>
-const state = { orgBUrl: null, root: null, child: null, grandchild: null, driver: null, cacheWindow: 60, busy: false };
+const state = { orgBUrl: null, root: null, child: null, grandchild: null, driver: null, cacheWindow: 0, busy: false };
 
 const el = (tag, attrs={}, ...children) => {
   const n = document.createElement(tag);
@@ -206,12 +197,6 @@ const el = (tag, attrs={}, ...children) => {
   children.forEach(c => n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c));
   return n;
 };
-
-const cacheWindowInput = document.getElementById('cacheWindow');
-cacheWindowInput.addEventListener('input', () => {
-  state.cacheWindow = parseInt(cacheWindowInput.value, 10);
-  document.getElementById('cacheWindowVal').textContent = state.cacheWindow + 's';
-});
 
 async function loadConfig() {
   const res = await fetch('/config.json');
@@ -533,7 +518,7 @@ async function runDelegation() {
 async function runRevocation() {
   clearSimple(); clearBody();
   const resource = 'harbor-ops/deploy/service-x';
-  stepRow(`Minting a fresh badge, asking once to warm Harbor's ${state.cacheWindow}s recheck window`, 'pending');
+  stepRow('Minting a fresh badge', 'pending');
   state.root = await mintRoot('harbor-ops/deploy/', ['deploy']);
   const first = await crossToOrgB(state.root, resource, state.cacheWindow);
   clearBody();
@@ -545,46 +530,26 @@ async function runRevocation() {
   renderTrace(first.decision.trace);
   renderDecision(first.decision);
 
-  body().appendChild(el('h3', {}, `Cancelling on Northwind, then retrying immediately (recheck window not yet elapsed)`));
+  body().appendChild(el('h3', {}, 'Cancelling on Northwind, then sending the exact same request again'));
   await revokeVaid(state.root.leaf.vaid_id);
   const immediate = await crossToOrgB(state.root, resource, state.cacheWindow);
   const stillAccepted = immediate.decision.decision === 'accept';
   simpleBlock(
     'Right after cancelling',
-    stillAccepted ? `Still allowed, for now: Harbor has not rechecked since the badge was cancelled.` : `Harbor refused: the badge was cancelled and Harbor already noticed.`,
+    stillAccepted ? `Still allowed: Harbor has not refused this cancelled badge.` : `Harbor refused: the badge was cancelled, and Harbor checked on this very request.`,
     stillAccepted,
     [
       { q: 'Who is this?', status: 'ok', text: `${agentLabel(state.root.leaf.agent_class)}. The badge itself is still genuine.` },
       stillAccepted
-        ? { q: 'Are they allowed to do this?', status: 'warn', text: `Yes, for now. Northwind cancelled this badge, but Harbor last checked moments ago and has not rechecked yet.` }
-        : { q: 'Are they allowed to do this?', status: 'bad', text: `No. Northwind cancelled this badge, and Harbor has now noticed.` },
+        ? { q: 'Are they allowed to do this?', status: 'bad', text: `Northwind cancelled this badge, but Harbor still allowed it. This should not happen.` }
+        : { q: 'Are they allowed to do this?', status: 'bad', text: `No. Northwind cancelled this badge, and Harbor refused it on this very request.` },
       { q: 'Can we prove it later?', status: immediate.decision.audit_record ? 'ok' : 'bad', text: immediate.decision.audit_record ? `Yes. Harbor recorded and signed this decision.` : `No signed record was produced.` },
     ].filter(Boolean)
   );
   renderScopePanel(state.root.leaf, resource, immediate.decision.trace);
   renderTrace(immediate.decision.trace);
   renderDecision(immediate.decision);
-  body().appendChild(el('p', {class:'footnote'},
-    stillAccepted
-      ? 'Still accepted. Harbor\'s recheck window has not expired yet. This is a deliberate trade-off: freshness versus a network round trip on every single request.'
-      : 'Already refused: the recheck window was short enough that this request landed after it expired.'));
-
-  body().appendChild(el('h3', {}, `Waiting ${state.cacheWindow}s for the recheck window to pass`));
-  const waitRow = stepRow('waiting', 'pending', '');
-  for (let s = state.cacheWindow; s > 0; s--) {
-    waitRow.querySelector('.detail').textContent = `${s}s remaining`;
-    await new Promise(r => setTimeout(r, 1000));
-  }
-  waitRow.querySelector('.badge').className = 'badge ok';
-  waitRow.querySelector('.badge').textContent = '✓';
-  waitRow.querySelector('.detail').textContent = 'recheck window elapsed';
-
-  const after = await crossToOrgB(state.root, resource, state.cacheWindow);
-  body().appendChild(el('h3', {}, 'Retrying after the recheck window'));
-  renderStandardSimple('After the recheck window', state.root.leaf, resource, after.decision);
-  renderScopePanel(state.root.leaf, resource, after.decision.trace);
-  renderTrace(after.decision.trace);
-  renderDecision(after.decision);
+  body().appendChild(el('p', {class:'footnote'}, 'A cancelled badge is refused on its very next request. Harbor checks every single time; there is no window during which a cancelled badge still works.'));
 }
 
 async function runTamper() {
@@ -695,20 +660,8 @@ async function runReissue() {
   body().appendChild(el('h3', {}, 'Cancelling the first badge on Northwind'));
   await revokeVaid(first.leaf.vaid_id);
 
-  // Harbor caches Northwind's revocation list for state.cacheWindow seconds
-  // (scenario 4), so a check made inside that window can still read stale
-  // "clean" state from before this cancel. Wait it out, visibly, before
-  // testing either badge, so what Harbor reports here is never stale.
-  body().appendChild(el('h3', {}, `Waiting ${state.cacheWindow}s for Harbor's recheck window to pass`));
-  const waitRow = stepRow('waiting', 'pending', '');
-  for (let s = state.cacheWindow; s > 0; s--) {
-    waitRow.querySelector('.detail').textContent = `${s}s remaining`;
-    await new Promise(r => setTimeout(r, 1000));
-  }
-  waitRow.querySelector('.badge').className = 'badge ok';
-  waitRow.querySelector('.badge').textContent = '✓';
-  waitRow.querySelector('.detail').textContent = 'recheck window elapsed';
-
+  // Harbor checks on every single request, so there is no window to wait
+  // out here: the very next check already reflects this cancel.
   const oldResult = await crossToOrgB(first, resource, state.cacheWindow);
   body().appendChild(el('h4', {}, 'Old badge (cancelled)'));
   renderScopePanel(first.leaf, resource, oldResult.decision.trace);
@@ -922,7 +875,7 @@ document.getElementById('cancelBadgeBtn').addEventListener('click', async () => 
     await revokeVaid(state.driver.leaf.vaid_id);
     const driverStatus = document.getElementById('driverStatus');
     driverStatus.className = 'status revoked';
-    driverStatus.textContent = `Badge cancelled. Harbor will notice next time it rechecks (within the recheck window above). Click "Send the job" again to see it refused, or lower the recheck window first.`;
+    driverStatus.textContent = `Badge cancelled. Harbor checks on every single request. Click "Send the job" again to see it refused.`;
   } catch (e) {
     clearSimple(); body().appendChild(el('div', {class:'decision-banner refuse'}, 'Error: ' + e));
   }
