@@ -172,9 +172,9 @@ details.tech[open] summary{color:var(--gold);}
     </div>
 
     <div class="settings">
-      <label>How often Harbor rechecks for a cancelled badge: <span class="val" id="cacheWindowVal">60s</span></label>
-      <input type="range" id="cacheWindow" min="1" max="60" value="60">
-      <p class="footnote">Lower this before scenario 4 so the effect of cancelling a badge is visible in under a minute. 60 seconds is the real, deployed default on both sides.</p>
+      <label>How often Harbor rechecks for a cancelled badge: <span class="val" id="cacheWindowVal">0s</span></label>
+      <input type="range" id="cacheWindow" min="0" max="60" value="0">
+      <p class="footnote">In SYNTHERA, a cancelled badge is refused on its very next request. Harbor does the same here by checking every request. Raise this to see the trade-off a receiver could choose instead: fewer round trips, but a short window where a just-cancelled badge still works.</p>
     </div>
   </div>
 
@@ -196,7 +196,7 @@ details.tech[open] summary{color:var(--gold);}
 </footer>
 
 <script>
-const state = { orgBUrl: null, root: null, child: null, grandchild: null, driver: null, cacheWindow: 60, busy: false };
+const state = { orgBUrl: null, root: null, child: null, grandchild: null, driver: null, cacheWindow: 0, busy: false };
 
 const el = (tag, attrs={}, ...children) => {
   const n = document.createElement(tag);
@@ -569,15 +569,17 @@ async function runRevocation() {
       ? 'Still accepted. Harbor\'s recheck window has not expired yet. This is a deliberate trade-off: freshness versus a network round trip on every single request.'
       : 'Already refused: the recheck window was short enough that this request landed after it expired.'));
 
-  body().appendChild(el('h3', {}, `Waiting ${state.cacheWindow}s for the recheck window to pass`));
-  const waitRow = stepRow('waiting', 'pending', '');
-  for (let s = state.cacheWindow; s > 0; s--) {
-    waitRow.querySelector('.detail').textContent = `${s}s remaining`;
-    await new Promise(r => setTimeout(r, 1000));
+  if (state.cacheWindow > 0) {
+    body().appendChild(el('h3', {}, `Waiting ${state.cacheWindow}s for the recheck window to pass`));
+    const waitRow = stepRow('waiting', 'pending', '');
+    for (let s = state.cacheWindow; s > 0; s--) {
+      waitRow.querySelector('.detail').textContent = `${s}s remaining`;
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    waitRow.querySelector('.badge').className = 'badge ok';
+    waitRow.querySelector('.badge').textContent = '✓';
+    waitRow.querySelector('.detail').textContent = 'recheck window elapsed';
   }
-  waitRow.querySelector('.badge').className = 'badge ok';
-  waitRow.querySelector('.badge').textContent = '✓';
-  waitRow.querySelector('.detail').textContent = 'recheck window elapsed';
 
   const after = await crossToOrgB(state.root, resource, state.cacheWindow);
   body().appendChild(el('h3', {}, 'Retrying after the recheck window'));
@@ -699,15 +701,17 @@ async function runReissue() {
   // (scenario 4), so a check made inside that window can still read stale
   // "clean" state from before this cancel. Wait it out, visibly, before
   // testing either badge, so what Harbor reports here is never stale.
-  body().appendChild(el('h3', {}, `Waiting ${state.cacheWindow}s for Harbor's recheck window to pass`));
-  const waitRow = stepRow('waiting', 'pending', '');
-  for (let s = state.cacheWindow; s > 0; s--) {
-    waitRow.querySelector('.detail').textContent = `${s}s remaining`;
-    await new Promise(r => setTimeout(r, 1000));
+  if (state.cacheWindow > 0) {
+    body().appendChild(el('h3', {}, `Waiting ${state.cacheWindow}s for Harbor's recheck window to pass`));
+    const waitRow = stepRow('waiting', 'pending', '');
+    for (let s = state.cacheWindow; s > 0; s--) {
+      waitRow.querySelector('.detail').textContent = `${s}s remaining`;
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    waitRow.querySelector('.badge').className = 'badge ok';
+    waitRow.querySelector('.badge').textContent = '✓';
+    waitRow.querySelector('.detail').textContent = 'recheck window elapsed';
   }
-  waitRow.querySelector('.badge').className = 'badge ok';
-  waitRow.querySelector('.badge').textContent = '✓';
-  waitRow.querySelector('.detail').textContent = 'recheck window elapsed';
 
   const oldResult = await crossToOrgB(first, resource, state.cacheWindow);
   body().appendChild(el('h4', {}, 'Old badge (cancelled)'));
