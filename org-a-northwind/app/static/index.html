@@ -216,7 +216,10 @@ async function loadConfig() {
 // touches this and keeps using the one shared dropdown as before.
 let _bodyTarget = null;
 function body() { return _bodyTarget || document.getElementById('crossingBody'); }
-function clearBody() { body().innerHTML = ''; }
+function clearBody() {
+  document.getElementById('techDetails').hidden = false;
+  body().innerHTML = '';
+}
 function simpleBody() { return document.getElementById('simpleBody'); }
 function clearSimple() { simpleBody().innerHTML = ''; }
 
@@ -813,6 +816,13 @@ async function runScenario7() {
   }
   const data = await res.json();
   clearBody();
+
+  // Past this point, scenario 7 never uses the one shared, page-level
+  // dropdown (crossingBody/techDetails) again: the badge and each result
+  // below get their own dropdown instead. Hide it so it does not sit here
+  // empty; clearBody() un-hides it again at the start of every scenario,
+  // including the next time this one runs.
+  document.getElementById('techDetails').hidden = true;
 
   // The badge is shared by both results below, so it gets its own dropdown
   // at the top, before either result, rather than sharing a dropdown with
