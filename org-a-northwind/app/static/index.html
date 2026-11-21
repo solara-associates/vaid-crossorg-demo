@@ -209,7 +209,13 @@ async function loadConfig() {
   document.getElementById('scenario7Btn').hidden = !cfg.scenario7_enabled;
 }
 
-function body() { return document.getElementById('crossingBody'); }
+// Normally the single shared "technical detail" dropdown. Scenario 7 has
+// two results, each needing its own dropdown directly under its own simple
+// block, so it points this at a per-result container for the duration of
+// rendering that result, then restores it. Every other scenario never
+// touches this and keeps using the one shared dropdown as before.
+let _bodyTarget = null;
+function body() { return _bodyTarget || document.getElementById('crossingBody'); }
 function clearBody() { body().innerHTML = ''; }
 function simpleBody() { return document.getElementById('simpleBody'); }
 function clearSimple() { simpleBody().innerHTML = ''; }
@@ -813,11 +819,22 @@ async function runScenario7() {
   ));
 
   data.crossings.forEach((c, i) => {
+    // This result's own technical-detail dropdown, placed directly under
+    // its own simple block below, rather than sharing the one global
+    // dropdown at the bottom of the page with the other result.
+    const techInner = el('div', {class:'tech-inner'});
+    const details = el('details', {class:'tech'}, el('summary', {}, 'Show technical detail'), techInner);
+
+    const prevTarget = _bodyTarget;
+    _bodyTarget = techInner;
     body().appendChild(el('h3', {}, i === 0 ? 'First request' : 'Second request, same badge'));
     crossingArrow('request leaves Google Cloud, carrying the text and a proof-of-possession signature');
     renderScenario7Simple(c.request, c.decision);
     renderTrace(c.decision.trace || []);
     renderDecision(c.decision);
+    _bodyTarget = prevTarget;
+
+    simpleBody().appendChild(details);
   });
 }
 
