@@ -813,10 +813,17 @@ async function runScenario7() {
   }
   const data = await res.json();
   clearBody();
-  body().appendChild(credentialBox(
+
+  // The badge is shared by both results below, so it gets its own dropdown
+  // at the top, before either result, rather than sharing a dropdown with
+  // either one.
+  const badgeInner = el('div', {class:'tech-inner'});
+  const badgeDetails = el('details', {class:'tech'}, el('summary', {}, 'Show the badge used for this run'), badgeInner);
+  badgeInner.appendChild(credentialBox(
     'Badge minted for this run (the private half stays on the server and is never sent to this browser)',
     data.bundle
   ));
+  simpleBody().appendChild(badgeDetails);
 
   data.crossings.forEach((c, i) => {
     // This result's own technical-detail dropdown, placed directly under
