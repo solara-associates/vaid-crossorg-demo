@@ -44,21 +44,32 @@ class _FakeDoc:
 class _FakeCollection:
     def __init__(self, store: dict) -> None:
         self._store = store
+        self._order_field = None
+        self._descending = False
+        self._limit_n = None
 
     def document(self, key=None):
         return _FakeDoc(self._store, key)
 
-    def stream(self):
-        return iter([])
-
     def where(self, *a, **k):
         return self
 
-    def order_by(self, *a, **k):
+    def order_by(self, field, direction=None):
+        self._order_field = field
+        self._descending = direction == "DESCENDING"
         return self
 
-    def limit(self, *a, **k):
+    def limit(self, n):
+        self._limit_n = n
         return self
+
+    def stream(self):
+        items = list(self._store.values())
+        if self._order_field is not None:
+            items.sort(key=lambda d: d[self._order_field], reverse=self._descending)
+        if self._limit_n is not None:
+            items = items[: self._limit_n]
+        return iter(SimpleNamespace(to_dict=lambda item=item: item) for item in items)
 
 
 class _FakeFirestore:

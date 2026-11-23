@@ -259,8 +259,18 @@ def revoke(req: RevokeRequest):
 @app.get("/audit")
 @public
 def audit(limit: int = 50):
-    docs = _audit_col.order_by("ts").limit(limit).stream()
-    return {"records": [d.to_dict() for d in docs]}
+    # Must be the newest `limit` records, not the oldest: ascending order_by
+    # with a limit returns whatever's earliest in the collection, which on a
+    # long-lived demo project is stale history from a predecessor deploy
+    # signed under a now-defunct key (s875) — the opposite of what a "verify
+    # what I just minted" scenario needs.
+    docs = (
+        _audit_col.order_by("ts", direction=firestore.Query.DESCENDING)
+        .limit(limit)
+        .stream()
+    )
+    records = sorted((d.to_dict() for d in docs), key=lambda r: r["ts"])
+    return {"records": records}
 
 
 class Scenario7Crossing(BaseModel):
