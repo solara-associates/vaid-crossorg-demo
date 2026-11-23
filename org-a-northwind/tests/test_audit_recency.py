@@ -102,3 +102,41 @@ def test_audit_returns_the_newest_records_not_the_oldest(client_flag_off):
         "the record just minted did not appear in the newest 10 — "
         "/audit is still returning stale history"
     )
+
+
+def test_audit_excludes_records_signed_under_a_different_key(client_flag_off):
+    """Regression for the part descending-order alone doesn't fix: a record
+    that is genuinely the newest by `ts` but was signed under a predecessor
+    deploy's (now unpublished) key must still be excluded — exactly what
+    happened live, where `vaid_audit` outlived a prior service generation
+    and its 191 leftover records outnumbered the 31 under the current key,
+    so even the newest-50 window still pulled in 19 of them."""
+    import main
+
+    main._audit_col.document("legacy-but-newest").set(
+        {
+            "record_id": "legacy-but-newest",
+            "ts": 9_999_999_999_999,
+            "org": "northwind-platform",
+            "action": "mint",
+            "vaid_id": "legacy-vaid",
+            "parent_vaid": None,
+            "signature_b64": "not-a-real-signature",
+            "key_id": "northwind-s409-k1",
+        }
+    )
+
+    client_flag_off.post(
+        "/mint",
+        json={
+            "agent_class": "infra-agent",
+            "scope_prefix": "harbor-ops/deploy/",
+            "capability_set": ["deploy"],
+        },
+    )
+
+    records = client_flag_off.get("/audit?limit=50").json()["records"]
+    assert all(r.get("key_id") != "northwind-s409-k1" for r in records), (
+        "a record signed under a different (unpublished) key leaked into "
+        "/audit despite being filtered to the current key_id"
+    )

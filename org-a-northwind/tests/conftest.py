@@ -44,6 +44,7 @@ class _FakeDoc:
 class _FakeCollection:
     def __init__(self, store: dict) -> None:
         self._store = store
+        self._filters: list[tuple[str, str, object]] = []
         self._order_field = None
         self._descending = False
         self._limit_n = None
@@ -51,7 +52,10 @@ class _FakeCollection:
     def document(self, key=None):
         return _FakeDoc(self._store, key)
 
-    def where(self, *a, **k):
+    def where(self, field, op, value):
+        if op != "==":
+            raise NotImplementedError(f"fake Firestore: unsupported operator {op!r}")
+        self._filters.append((field, op, value))
         return self
 
     def order_by(self, field, direction=None):
@@ -65,6 +69,8 @@ class _FakeCollection:
 
     def stream(self):
         items = list(self._store.values())
+        for field, _op, value in self._filters:
+            items = [d for d in items if d.get(field) == value]
         if self._order_field is not None:
             items.sort(key=lambda d: d[self._order_field], reverse=self._descending)
         if self._limit_n is not None:

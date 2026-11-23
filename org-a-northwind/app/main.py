@@ -259,13 +259,20 @@ def revoke(req: RevokeRequest):
 @app.get("/audit")
 @public
 def audit(limit: int = 50):
-    # Must be the newest `limit` records, not the oldest: ascending order_by
-    # with a limit returns whatever's earliest in the collection, which on a
-    # long-lived demo project is stale history from a predecessor deploy
-    # signed under a now-defunct key (s875) — the opposite of what a "verify
-    # what I just minted" scenario needs.
+    # Must be the newest `limit` records under the CURRENT key, not the
+    # oldest, and not a mix that includes a predecessor deploy's history.
+    # Ascending order_by with a limit returns whatever's earliest in the
+    # collection (s875) — the opposite of what "verify what I just minted"
+    # needs. Descending+limit alone is still not enough on this project:
+    # `vaid_audit` outlives individual deploys, so until there are more than
+    # `limit` records under the current key, the newest-N window still pulls
+    # in old records signed under a key this service no longer publishes at
+    # /.well-known/vaid-keys.json, which fail verification for a reason that
+    # has nothing to do with tampering. Filtering to the current key_id is
+    # what the verify scenario actually means by "the evidence bundle."
     docs = (
-        _audit_col.order_by("ts", direction=firestore.Query.DESCENDING)
+        _audit_col.where("key_id", "==", keyring_gcp.key_id())
+        .order_by("ts", direction=firestore.Query.DESCENDING)
         .limit(limit)
         .stream()
     )
