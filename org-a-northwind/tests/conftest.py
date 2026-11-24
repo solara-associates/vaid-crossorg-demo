@@ -44,21 +44,38 @@ class _FakeDoc:
 class _FakeCollection:
     def __init__(self, store: dict) -> None:
         self._store = store
+        self._filters: list[tuple[str, str, object]] = []
+        self._order_field = None
+        self._descending = False
+        self._limit_n = None
 
     def document(self, key=None):
         return _FakeDoc(self._store, key)
 
+    def where(self, field, op, value):
+        if op != "==":
+            raise NotImplementedError(f"fake Firestore: unsupported operator {op!r}")
+        self._filters.append((field, op, value))
+        return self
+
+    def order_by(self, field, direction=None):
+        self._order_field = field
+        self._descending = direction == "DESCENDING"
+        return self
+
+    def limit(self, n):
+        self._limit_n = n
+        return self
+
     def stream(self):
-        return iter([])
-
-    def where(self, *a, **k):
-        return self
-
-    def order_by(self, *a, **k):
-        return self
-
-    def limit(self, *a, **k):
-        return self
+        items = list(self._store.values())
+        for field, _op, value in self._filters:
+            items = [d for d in items if d.get(field) == value]
+        if self._order_field is not None:
+            items.sort(key=lambda d: d[self._order_field], reverse=self._descending)
+        if self._limit_n is not None:
+            items = items[: self._limit_n]
+        return iter(SimpleNamespace(to_dict=lambda item=item: item) for item in items)
 
 
 class _FakeFirestore:

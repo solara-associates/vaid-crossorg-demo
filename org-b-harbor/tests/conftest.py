@@ -65,8 +65,22 @@ class _FakeTable:
         key = Item.get("record_key") or Item["record_id"]
         self._store[key] = Item
 
-    def scan(self, Limit=None):
-        return {"Items": list(self._store.values())}
+    def scan(self, Limit=None, ExclusiveStartKey=None):
+        # Mirrors real DynamoDB Scan: `Limit` truncates to the first N items
+        # in whatever order the store happens to hold them (insertion order
+        # here, which is itself already more orderly than a real table's
+        # partition order) — NOT the newest N — and pagination continues
+        # from `LastEvaluatedKey`. A fake that silently returned everything
+        # regardless of `Limit` would make the s875 recency bug untestable.
+        keys = list(self._store.keys())
+        start = keys.index(ExclusiveStartKey["_k"]) + 1 if ExclusiveStartKey else 0
+        page_keys = keys[start:]
+        if Limit is not None:
+            page_keys = page_keys[:Limit]
+        resp = {"Items": [self._store[k] for k in page_keys]}
+        if page_keys and start + len(page_keys) < len(keys):
+            resp["LastEvaluatedKey"] = {"_k": page_keys[-1]}
+        return resp
 
 
 class _FakeDynamoClient:

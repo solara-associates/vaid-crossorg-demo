@@ -66,6 +66,16 @@ def _undecimal(value):
 
 
 def list_records(limit: int = 50) -> list[dict]:
-    resp = _table().scan(Limit=limit)
-    items = sorted(resp.get("Items", []), key=lambda r: r["ts"])
-    return [_undecimal(item) for item in items]
+    # `Scan(Limit=N)` returns the first N items DynamoDB happens to examine —
+    # an arbitrary, non-recency slice of the table (and one that can change
+    # between calls as the table grows), not the newest N (s875). The table
+    # is demo-sized (hundreds of items), so a full scan is cheap; take the
+    # newest `limit` after sorting instead of trusting Scan's own order.
+    items: list[dict] = []
+    resp = _table().scan()
+    items.extend(resp.get("Items", []))
+    while "LastEvaluatedKey" in resp:
+        resp = _table().scan(ExclusiveStartKey=resp["LastEvaluatedKey"])
+        items.extend(resp.get("Items", []))
+    items.sort(key=lambda r: r["ts"])
+    return [_undecimal(item) for item in items[-limit:]]
