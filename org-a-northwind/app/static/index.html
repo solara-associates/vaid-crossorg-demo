@@ -53,7 +53,7 @@ header p{color:var(--text-dim);margin:4px 0 0;font-size:0.95rem;}
 .credential-box dd{margin:0;word-break:break-all;}
 .cross-arrow{display:flex;align-items:center;gap:10px;margin:14px 0;color:var(--gold);font-size:0.85rem;}
 .cross-arrow .line{flex:1;height:1px;background:linear-gradient(to right, var(--gold-dim), var(--gold), var(--gold-dim));}
-.evidence{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;}
+.evidence{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;align-items:center;}
 button.action{background:var(--gold);color:#201c08;border:none;border-radius:4px;padding:10px 16px;
   font-family:'IBM Plex Sans',sans-serif;font-weight:600;cursor:pointer;font-size:0.95rem;}
 button.action:disabled{opacity:0.5;cursor:default;}
@@ -66,6 +66,13 @@ textarea.bundle{width:100%;min-height:160px;background:#0d0c09;color:var(--text)
 .pill.gcp{color:#8ab4f8;border-color:#2c4a73;}
 .pill.aws{color:#f7a93b;border-color:#6b4c15;}
 footer{margin:40px 0 24px;color:var(--text-dim);font-size:0.78rem;border-top:1px solid var(--line);padding-top:14px;}
+
+@keyframes flipFlash{0%{background-color:rgba(201,82,74,0.45);}100%{background-color:transparent;}}
+textarea.bundle.flip-flash{animation:flipFlash 500ms ease-out;}
+.flip-msg{color:var(--bad);font-size:0.85rem;align-self:center;}
+@media (prefers-reduced-motion: reduce){
+  textarea.bundle.flip-flash{animation:none;}
+}
 
 /* simple view */
 .simple-block{margin-bottom:24px;}
@@ -597,7 +604,8 @@ async function runTamper() {
   const btnRow = el('div', {class:'evidence'});
   const verifyBtn = el('button', {class:'action'}, 'Verify bundle');
   const tamperBtn = el('button', {class:'action secondary'}, 'Flip one byte for me');
-  btnRow.appendChild(verifyBtn); btnRow.appendChild(tamperBtn);
+  const flipMsg = el('span', {class:'flip-msg'});
+  btnRow.appendChild(verifyBtn); btnRow.appendChild(tamperBtn); btnRow.appendChild(flipMsg);
   body().appendChild(btnRow);
   const resultsDiv = el('div', {});
   body().appendChild(resultsDiv);
@@ -611,9 +619,17 @@ async function runTamper() {
       parsed.org_b_records[0].signature_b64 = flipped;
     }
     ta.value = JSON.stringify(parsed, null, 2);
+    flipMsg.textContent = '1 byte changed. The signature no longer matches.';
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduceMotion) {
+      ta.classList.remove('flip-flash');
+      void ta.offsetWidth;
+      ta.classList.add('flip-flash');
+    }
   };
 
   verifyBtn.onclick = async () => {
+    flipMsg.textContent = '';
     resultsDiv.innerHTML = '';
     let parsed;
     try { parsed = JSON.parse(ta.value); } catch (e) { resultsDiv.textContent = 'invalid JSON: ' + e; return; }
